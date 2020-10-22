@@ -33,5 +33,8 @@ unsafe_code
 )]
 #![forbid(unsafe_code)]
 
-pub mod naive_threshold_sig;
-pub mod constants;
+pub mod base_tx_circuit;
+pub use self::base_tx_circuit::*;
+
+pub mod demo_circuit;
+pub use self::demo_circuit::*;

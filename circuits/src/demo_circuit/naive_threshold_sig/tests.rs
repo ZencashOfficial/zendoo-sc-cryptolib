@@ -1,27 +1,33 @@
 use algebra::{
     BigInteger768,
     fields::mnt4753::Fr as MNT4Fr,
-    curves::mnt6753::G1Projective as MNT6G1Projective, ProjectiveCurve,
-    Field, PrimeField, ToBits
+    curves::mnt6753::G1Projective as MNT6G1Projective,
+    Field, PrimeField, ToBits, ProjectiveCurve,
 };
 
 use primitives::{
     signature::{
-        schnorr::field_based_schnorr::{FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme},
+        schnorr::field_based_schnorr::{
+            FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme,
+            FieldBasedSchnorrPk,
+        },
         FieldBasedSignatureScheme,
     },
     crh::{FieldBasedHash, MNT4PoseidonHash},
 };
 use r1cs_crypto::{
     signature::{
-        schnorr::field_based_schnorr::{FieldBasedSchnorrSigGadget, FieldBasedSchnorrSigVerificationGadget},
+        schnorr::field_based_schnorr::{
+            FieldBasedSchnorrSigGadget, FieldBasedSchnorrSigVerificationGadget,
+            FieldBasedSchnorrPkGadget,
+        },
         FieldBasedSigGadget,
     },
     crh::{MNT4PoseidonHashGadget, FieldBasedHashGadget}
 };
 
 use r1cs_std::{
-    groups::curves::short_weierstrass::mnt::mnt6::mnt6753::MNT6G1Gadget,
+    instantiated::mnt6_753::G1Gadget as MNT6G1Gadget,
     fields::{
         fp::FpGadget, FieldGadget,
     },
@@ -47,10 +53,12 @@ lazy_static! {
 
 //Sig types
 type SchnorrSig = FieldBasedSchnorrSignatureScheme<MNT4Fr, MNT6G1Projective, MNT4PoseidonHash>;
-type SchnorrSigGadget = FieldBasedSchnorrSigGadget<MNT4Fr>;
+type SchnorrSigGadget = FieldBasedSchnorrSigGadget<MNT4Fr, MNT6G1Projective>;
 type SchnorrVrfySigGadget = FieldBasedSchnorrSigVerificationGadget<
     MNT4Fr, MNT6G1Projective, MNT6G1Gadget, MNT4PoseidonHash, MNT4PoseidonHashGadget
 >;
+type SchnorrPk = FieldBasedSchnorrPk<MNT6G1Projective>;
+type SchnorrPkGadget = FieldBasedSchnorrPkGadget<MNT4Fr, MNT6G1Projective, MNT6G1Gadget>;
 
 //Field types
 type MNT4FrGadget = FpGadget<MNT4Fr>;
@@ -58,8 +66,8 @@ type MNT4FrGadget = FpGadget<MNT4Fr>;
 struct NaiveTresholdSignatureTest{
 
     //Witnesses
-    pks:                      Vec<MNT6G1Projective>,
-    sigs:                     Vec<FieldBasedSchnorrSignature<MNT4Fr>>,
+    pks:                      Vec<SchnorrPk>,
+    sigs:                     Vec<FieldBasedSchnorrSignature<MNT4Fr, MNT6G1Projective>>,
     threshold:                MNT4Fr,
     b:                        Vec<bool>,
     end_epoch_mc_b_hash:      MNT4Fr,
@@ -135,7 +143,7 @@ fn generate_inputs
 
     //Compute pks_threshold_hash
     h.reset(None);
-    pks.iter().for_each(|pk| { h.update(pk.into_affine().x); });
+    pks.iter().for_each(|pk| { h.update(pk.0.into_affine().x); });
     let pks_hash = h.finalize();
     let pks_threshold_hash = if !wrong_pks_threshold_hash {
         h
@@ -201,7 +209,7 @@ fn generate_constraints(
         // It's safe to not perform any check when allocating the pks,
         // considering that the pks are hashed, so they should be public
         // at some point, therefore verifiable by everyone.
-        let pk_g = MNT6G1Gadget::alloc_without_check(
+        let pk_g = SchnorrPkGadget::alloc_without_check(
             cs.ns(|| format!("alloc_pk_{}", i)),
             || Ok(pk)
         ).unwrap();
@@ -211,7 +219,7 @@ fn generate_constraints(
     //Check pks
     let mut pks_threshold_hash_g = MNT4PoseidonHashGadget::check_evaluation_gadget(
         cs.ns(|| "hash public keys"),
-        pks_g.iter().map(|pk| pk.x.clone()).collect::<Vec<_>>().as_slice(),
+        pks_g.iter().map(|pk| pk.pk.x.clone()).collect::<Vec<_>>().as_slice(),
     ).unwrap();
 
     //Allocate threshold as witness

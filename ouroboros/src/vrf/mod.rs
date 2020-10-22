@@ -10,7 +10,7 @@ use primitives::{crh::{
 }, vrf::{
     FieldBasedVrf,
     ecvrf::{
-        FieldBasedEcVrf, FieldBasedEcVrfProof,
+        FieldBasedEcVrf, FieldBasedEcVrfProof, FieldBasedEcVrfPk,
     },
 }};
 use rand::rngs::OsRng;
@@ -26,13 +26,14 @@ type GroupHash = BoweHopwoodPedersenCRH<MNT6G1Projective, TestWindow>;
 type GroupHashParameters = BoweHopwoodPedersenParameters<MNT6G1Projective>;
 type EcVrfScheme = FieldBasedEcVrf<Fr, MNT6G1Projective, MNT4PoseidonHash, GroupHash>;
 type EcVrfProof = FieldBasedEcVrfProof<Fr, MNT6G1Projective>;
+type EcVrfPk = FieldBasedEcVrfPk<MNT6G1Projective>;
 
 pub fn ouroboros_create_proof
 (
     pp: GroupHashParameters,
     epoch_randomness: Fr,
     _slot_number: u32,
-    pk: MNT6G1Projective, //Or MNT6G1Affine and you convert into projective by calling pk.into_projective() inside the function
+    pk: EcVrfPk,
     sk: Fs,
     _forger_stake: u64,
     _total_forgers_stake: u64
@@ -52,7 +53,7 @@ pub fn ouroboros_check_proof
     proof: (EcVrfProof, EcVrfProof),
     epoch_randomness: Fr,
     _slot_number: u32,
-    forger_pk: MNT6G1Projective, //Or MNT6G1Affine and you convert into projective by calling pk.into_projective() inside the function
+    forger_pk: EcVrfPk, //Or MNT6G1Affine and you convert into projective by calling pk.into_projective() inside the function
     _forger_stake: u64,
     _total_forgers_stake: u64,
 

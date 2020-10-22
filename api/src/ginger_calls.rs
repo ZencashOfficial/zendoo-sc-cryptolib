@@ -7,10 +7,7 @@ use algebra::{fields::{
     },
 }, FromBytes, ToBytes, BigInteger768, ProjectiveCurve, AffineCurve, ToConstraintField, UniformRand, ToBits};
 use primitives::{crh::{
-    poseidon::{
-        MNT4PoseidonHash,
-        batched_crh::MNT4BatchPoseidonHash as BatchFieldHash,
-    },
+    poseidon::parameters::mnt4753::{MNT4PoseidonHash, MNT4BatchPoseidonHash as BatchFieldHash},
     FieldBasedHash,
     bowe_hopwood::{
         BoweHopwoodPedersenCRH, BoweHopwoodPedersenParameters
@@ -18,20 +15,21 @@ use primitives::{crh::{
 }, merkle_tree::field_based_mht::{
     smt::{BigMerkleTree, LazyBigMerkleTree, Coord, OperationLeaf},
     optimized::FieldBasedOptimizedMHT,
-    poseidon::{MNT4753_PHANTOM_MERKLE_ROOT as PHANTOM_MERKLE_ROOT, MNT4753_MHT_POSEIDON_PARAMETERS as MHT_PARAMETERS},
+    parameters::mnt4753::{MNT4753_PHANTOM_MERKLE_ROOT as PHANTOM_MERKLE_ROOT, MNT4753_MHT_POSEIDON_PARAMETERS as MHT_PARAMETERS},
     FieldBasedMerkleTree, FieldBasedMerkleTreePrecomputedEmptyConstants,
     FieldBasedMerkleTreeParameters, BatchFieldBasedMerkleTreeParameters,
     FieldBasedMerkleTreePath, FieldBasedBinaryMHTPath,
 }, signature::{
     FieldBasedSignatureScheme, schnorr::field_based_schnorr::{
-        FieldBasedSchnorrSignatureScheme, FieldBasedSchnorrSignature
+        FieldBasedSchnorrSignatureScheme, FieldBasedSchnorrSignature,
+        FieldBasedSchnorrPk,
     },
 }, vrf::{FieldBasedVrf, ecvrf::*}, ActionLeaf};
 use proof_systems::groth16::{
     Proof, create_random_proof,
     prepare_verifying_key, verify_proof,
 };
-use demo_circuit::{
+use circuits::demo_circuit::{
     constants::{
         VRFParams, VRFWindow,
     },
@@ -92,31 +90,31 @@ pub fn get_random_field_element(seed: u64) -> FieldElement {
 //***************************Schnorr types and functions********************************************
 
 pub type SchnorrSigScheme = FieldBasedSchnorrSignatureScheme<FieldElement, GroupProjective, FieldHash>;
-pub type SchnorrSig = FieldBasedSchnorrSignature<FieldElement>;
+pub type SchnorrSig = FieldBasedSchnorrSignature<FieldElement, GroupProjective>;
 pub type SchnorrPk = GroupAffine;
 pub type SchnorrSk = ScalarFieldElement;
 
 pub fn schnorr_generate_key() -> (SchnorrPk, SchnorrSk) {
     let mut rng = OsRng;
     let (pk, sk) = SchnorrSigScheme::keygen(&mut rng);
-    (pk.into_affine(), sk)
+    (pk.0.into_affine(), sk)
 }
 
 pub fn schnorr_get_public_key(sk: &SchnorrSk) -> SchnorrPk {
-    SchnorrSigScheme::get_public_key(sk).into_affine()
+    SchnorrSigScheme::get_public_key(sk).0.into_affine()
 }
 
 pub fn schnorr_verify_public_key(pk: &SchnorrPk) -> bool {
-    SchnorrSigScheme::keyverify(&pk.into_projective())
+    SchnorrSigScheme::keyverify(&FieldBasedSchnorrPk(pk.into_projective()))
 }
 
 pub fn schnorr_sign(msg: &FieldElement, sk: &SchnorrSk, pk: &SchnorrPk) -> Result<SchnorrSig, Error> {
     let mut rng = OsRng;
-    SchnorrSigScheme::sign(&mut rng, &pk.into_projective(), sk, &[*msg])
+    SchnorrSigScheme::sign(&mut rng, &FieldBasedSchnorrPk(pk.into_projective()), sk, &[*msg])
 }
 
 pub fn schnorr_verify_signature(msg: &FieldElement, pk: &SchnorrPk, signature: &SchnorrSig) -> Result<bool, Error> {
-    SchnorrSigScheme::verify(&pk.into_projective(), &[*msg], signature)
+    SchnorrSigScheme::verify(&FieldBasedSchnorrPk(pk.into_projective()), &[*msg], signature)
 }
 
 //************************************Poseidon Hash functions****************************************
@@ -295,7 +293,7 @@ pub fn create_naive_threshold_sig_proof(
     let b = read_field_element_from_u64(valid_signatures - threshold);
 
     //Convert affine pks to projective
-    let pks = pks.iter().map(|&pk| pk.into_projective()).collect::<Vec<_>>();
+    let pks = pks.iter().map(|&pk| FieldBasedSchnorrPk(pk.into_projective())).collect::<Vec<_>>();
 
     //Convert needed variables into field elements
     let threshold = read_field_element_from_u64(threshold);
@@ -361,15 +359,15 @@ pub type VRFSk = ScalarFieldElement;
 pub fn vrf_generate_key() -> (VRFPk, VRFSk) {
     let mut rng = OsRng;
     let (pk, sk) = VRFScheme::keygen(&mut rng);
-    (pk.into_affine(), sk)
+    (pk.0.into_affine(), sk)
 }
 
 pub fn vrf_get_public_key(sk: &VRFSk) -> VRFPk {
-    SchnorrSigScheme::get_public_key(sk).into_affine()
+    VRFScheme::get_public_key(sk).0.into_affine()
 }
 
 pub fn vrf_verify_public_key(pk: &VRFPk) -> bool {
-    SchnorrSigScheme::keyverify(&pk.into_projective())
+    VRFScheme::keyverify(&FieldBasedEcVrfPk(pk.into_projective()))
 }
 
 pub fn vrf_prove(msg: &FieldElement, sk: &VRFSk, pk: &VRFPk) -> Result<(VRFProof, FieldElement), Error> {
@@ -379,7 +377,7 @@ pub fn vrf_prove(msg: &FieldElement, sk: &VRFSk, pk: &VRFPk) -> Result<(VRFProof
     let proof = VRFScheme::prove(
         &mut rng,
         &VRF_GH_PARAMS,
-        &pk.into_projective(),
+        &FieldBasedEcVrfPk(pk.into_projective()),
         sk,
         &[*msg]
     )?;
@@ -402,7 +400,7 @@ pub fn vrf_prove(msg: &FieldElement, sk: &VRFSk, pk: &VRFPk) -> Result<(VRFProof
 }
 
 pub fn vrf_proof_to_hash(msg: &FieldElement, pk: &VRFPk, proof: &VRFProof) -> Result<FieldElement, Error> {
-    VRFScheme::proof_to_hash(&VRF_GH_PARAMS,&pk.into_projective(), &[*msg], proof)
+    VRFScheme::proof_to_hash(&VRF_GH_PARAMS,&FieldBasedEcVrfPk(pk.into_projective()), &[*msg], proof)
 }
 
 //************Merkle Tree functions******************
@@ -829,7 +827,7 @@ mod test {
         //Serialize/deserialize pk
         let mut pk_serialized = vec![0u8; SCHNORR_PK_SIZE];
         serialize_to_buffer(&pk, &mut pk_serialized).unwrap();
-        let pk_deserialized = deserialize_from_buffer(&pk_serialized).unwrap();
+        let pk_deserialized: SchnorrPk = deserialize_from_buffer(&pk_serialized).unwrap();
         assert_eq!(pk, pk_deserialized);
 
         //Serialize/deserialize sk
@@ -865,7 +863,7 @@ mod test {
         //Serialize/deserialize pk
         let mut pk_serialized = vec![0u8; VRF_PK_SIZE];
         serialize_to_buffer(&pk, &mut pk_serialized).unwrap();
-        let pk_deserialized = deserialize_from_buffer(&pk_serialized).unwrap();
+        let pk_deserialized: VRFPk = deserialize_from_buffer(&pk_serialized).unwrap();
         assert_eq!(pk, pk_deserialized);
 
         //Serialize/deserialize sk

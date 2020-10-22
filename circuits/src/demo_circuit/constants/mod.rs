@@ -7,21 +7,23 @@ use algebra::{
 
 use primitives::{
     crh::pedersen::PedersenWindow,
-    signature::schnorr::field_based_schnorr::FieldBasedSchnorrSignature
+    signature::schnorr::field_based_schnorr::{
+        FieldBasedSchnorrSignature, FieldBasedSchnorrPk,
+    }
 };
 
 pub mod constants;
 
 pub struct NaiveThresholdSigParams{
-    pub null_sig:   FieldBasedSchnorrSignature<Fr>,
-    pub null_pk:    G1Projective,
+    pub null_sig:   FieldBasedSchnorrSignature<Fr, G1Projective>,
+    pub null_pk:    FieldBasedSchnorrPk<G1Projective>,
 }
 
 impl NaiveThresholdSigParams {
     pub fn new() -> Self {
         let e = Fr::one();
         let s = e.clone();
-        let null_sig = FieldBasedSchnorrSignature::<Fr>{e, s};
+        let null_sig = FieldBasedSchnorrSignature::<Fr, G1Projective>::new(e, s);
 
         let x = Fr::from_repr(
             BigInteger([
@@ -71,7 +73,7 @@ impl NaiveThresholdSigParams {
                 135547536859714,
             ]));
 
-        let null_pk = G1Projective::new(x, y, z);
+        let null_pk = FieldBasedSchnorrPk(G1Projective::new(x, y, z));
 
         Self{null_sig, null_pk}
     }
@@ -300,7 +302,7 @@ mod test
             .unwrap()
             .into_projective();
         println!("{:#?}", htc_out);
-        let null_pk = NaiveThresholdSigParams::new().null_pk;
+        let null_pk = NaiveThresholdSigParams::new().null_pk.0;
         assert_eq!(htc_out, null_pk);
     }
 

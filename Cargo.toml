@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["demo-circuit", "ouroboros", "api"]
+members = ["circuits", "ouroboros", "api"]
 
 [profile.release]
 opt-level = 3
