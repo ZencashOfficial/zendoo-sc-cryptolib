@@ -60,6 +60,8 @@ public class SchnorrKeyPairTest {
         {
             assertNotNull("sk deserialization must not fail", sk);
             assertNotNull("message deserialization must not fail", message);
+            assertNotNull("signature deserialization must not fail", sig);
+            assertTrue("Schnorr signature must be valid", sig.isValidSignature());
             assertTrue("Signature must be verified", keyPair.getPublicKey().verifySignature(sig, message));
         }
 
@@ -84,6 +86,7 @@ public class SchnorrKeyPairTest {
                 try(SchnorrSignature signature = keyPair.signMessage(fieldElement))
                 {
                     assertNotNull("Attempt to sign message failed.", signature);
+                    assertTrue("Schnorr signature must be valid", signature.isValidSignature());
                     assertTrue("Signature must be verified", keyPair.getPublicKey().verifySignature(signature, fieldElement));
                     assertFalse("Signature must not be verified", keyPair.getPublicKey().verifySignature(signature, wrongFieldElement));
                 }

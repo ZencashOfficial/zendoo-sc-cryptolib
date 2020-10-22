@@ -22,13 +22,17 @@ public class VRFPublicKey implements AutoCloseable
 
   private static native int nativeGetPublicKeySize();
 
-  private static native VRFPublicKey nativeDeserializePublicKey(byte[] publicKeyBytes);
+  private static native VRFPublicKey nativeDeserializePublicKey(byte[] publicKeyBytes, boolean checkPublicKey);
 
-  public static VRFPublicKey deserialize(byte[] publicKeyBytes) {
+  public static VRFPublicKey deserialize(byte[] publicKeyBytes, boolean checkPublicKey) {
     if (publicKeyBytes.length != PUBLIC_KEY_LENGTH)
       throw new IllegalArgumentException(String.format("Incorrect public key length, %d expected, %d found", PUBLIC_KEY_LENGTH, publicKeyBytes.length));
 
-    return nativeDeserializePublicKey(publicKeyBytes);
+    return nativeDeserializePublicKey(publicKeyBytes, checkPublicKey);
+  }
+
+  public static VRFPublicKey deserialize(byte[] publicKeyBytes, boolean checkPublicKey) {
+    return VRFPublicKey.deserialize(publicKeyBytes, true);
   }
 
   private native byte[] nativeSerializePublicKey();

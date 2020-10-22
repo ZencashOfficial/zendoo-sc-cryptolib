@@ -5,7 +5,8 @@ use algebra::{fields::{
     mnt6753::{
         G1Projective as GroupProjective, G1Affine as GroupAffine
     },
-}, FromBytes, ToBytes, BigInteger768, ProjectiveCurve, AffineCurve, ToConstraintField, UniformRand, ToBits};
+}, FromBytes, FromBytesChecked, validity::SemanticallyValid,
+   ToBytes, BigInteger768, ProjectiveCurve, AffineCurve, ToConstraintField, UniformRand, ToBits};
 use primitives::{crh::{
     poseidon::parameters::mnt4753::{MNT4PoseidonHash, MNT4BatchPoseidonHash as BatchFieldHash},
     FieldBasedHash,
@@ -63,11 +64,15 @@ pub const VRF_PROOF_SIZE: usize = G1_SIZE + 2 * FIELD_SIZE; // 192
 pub const ZK_PROOF_SIZE: usize = 2 * G1_SIZE + G2_SIZE;  // 771
 pub type Error = Box<dyn std::error::Error>;
 
-//*******************************Generic I/O functions**********************************************
+//*******************************Generic functions**********************************************
 // Note: Should decide if panicking or handling IO errors
 
 pub fn deserialize_from_buffer<T: FromBytes>(buffer: &[u8]) ->  IoResult<T> {
     T::read(buffer)
+}
+
+pub fn deserialize_from_buffer_checked<T: FromBytesChecked>(buffer: &[u8]) ->  IoResult<T> {
+    T::read_checked(buffer)
 }
 
 pub fn serialize_to_buffer<T: ToBytes>(to_write: &T, buffer: &mut [u8]) -> IoResult<()> {
@@ -76,8 +81,16 @@ pub fn serialize_to_buffer<T: ToBytes>(to_write: &T, buffer: &mut [u8]) -> IoRes
 
 pub fn read_from_file<T: FromBytes>(file_path: &str) -> IoResult<T>{
     let mut fs = File::open(file_path)?;
-    let t = T::read(&mut fs)?;
-    Ok(t)
+    T::read(&mut fs)
+}
+
+pub fn read_from_file_checked<T: FromBytesChecked>(file_path: &str) -> IoResult<T>{
+    let mut fs = File::open(file_path)?;
+    T::read_checked(&mut fs)
+}
+
+pub fn is_valid<T: SemanticallyValid>(to_check: &T) -> bool {
+    T::is_valid(to_check)
 }
 
 // NOTE: This function relies on a non-cryptographically safe RNG, therefore it
@@ -260,7 +273,8 @@ pub fn create_naive_threshold_sig_proof(
     prev_end_epoch_mc_b_hash: &[u8; 32],
     bt_list:                  &[BackwardTransfer],
     threshold:                u64,
-    proving_key_path:         &str
+    proving_key_path:         &str,
+    enforce_membership:       bool,
 ) -> Result<(SCProof, u64), Error> {
 
     //Get max pks
@@ -304,7 +318,11 @@ pub fn create_naive_threshold_sig_proof(
     );
 
     //Read proving key
-    let params = read_from_file(proving_key_path)?;
+    let params = if enforce_membership {
+        read_from_file_checked(proving_key_path)
+    } else {
+        read_from_file(proving_key_path)
+    }?;
 
     //Create and return proof
     let mut rng = OsRng;
@@ -320,6 +338,7 @@ pub fn verify_naive_threshold_sig_proof(
     valid_sigs:               u64,
     proof:                    &SCProof,
     vk_path:                  &str,
+    enforce_membership:       bool
 ) -> Result<bool, Error>
 {
     //Compute wcert_sysdata_hash
@@ -333,7 +352,11 @@ pub fn verify_naive_threshold_sig_proof(
         .finalize();
 
     //Verify proof
-    let vk = read_from_file(vk_path)?;
+    let vk = if enforce_membership {
+        read_from_file_checked(vk_path)
+    } else {
+        read_from_file(vk_path)
+    }?;
     let pvk = prepare_verifying_key(&vk); //Get verifying key
     let is_verified = verify_proof(&pvk, &proof, &[aggregated_input])?;
 
@@ -753,6 +776,7 @@ mod test {
             let keypair = schnorr_generate_key();
             pks.push(keypair.0);
             sks.push(keypair.1);
+            println!("sk: {:?}", into_i8(to_bytes!(keypair.1).unwrap()).to_vec());
         }
 
         let mut sigs = vec![];
@@ -778,7 +802,8 @@ mod test {
             &prev_end_epoch_mc_b_hash,
             bt_list.as_slice(),
             threshold,
-            proving_key_path
+            proving_key_path,
+            false,
         ).unwrap();
         let proof_path = if bt_num != 0 {"./sample_proof"} else {"./sample_proof_no_bwt"};
         write_to_file(&proof, proof_path).unwrap();
@@ -792,6 +817,7 @@ mod test {
             quality,
             &proof,
             verifying_key_path,
+            true,
         ).unwrap());
 
 
@@ -804,6 +830,7 @@ mod test {
             quality - 1,
             &proof,
             verifying_key_path,
+            true,
         ).unwrap());
     }
 
@@ -827,7 +854,7 @@ mod test {
         //Serialize/deserialize pk
         let mut pk_serialized = vec![0u8; SCHNORR_PK_SIZE];
         serialize_to_buffer(&pk, &mut pk_serialized).unwrap();
-        let pk_deserialized: SchnorrPk = deserialize_from_buffer(&pk_serialized).unwrap();
+        let pk_deserialized = deserialize_from_buffer_checked(&pk_serialized).unwrap();
         assert_eq!(pk, pk_deserialized);
 
         //Serialize/deserialize sk
@@ -837,6 +864,7 @@ mod test {
         assert_eq!(sk, sk_deserialized);
 
         let sig = schnorr_sign(&msg, &sk, &pk).unwrap(); //Sign msg
+        assert!(is_valid(&sig));
 
         //Serialize/deserialize sig
         let mut sig_serialized = vec![0u8; SCHNORR_SIG_SIZE];
@@ -863,7 +891,7 @@ mod test {
         //Serialize/deserialize pk
         let mut pk_serialized = vec![0u8; VRF_PK_SIZE];
         serialize_to_buffer(&pk, &mut pk_serialized).unwrap();
-        let pk_deserialized: VRFPk = deserialize_from_buffer(&pk_serialized).unwrap();
+        let pk_deserialized = deserialize_from_buffer_checked(&pk_serialized).unwrap();
         assert_eq!(pk, pk_deserialized);
 
         //Serialize/deserialize sk
@@ -873,11 +901,12 @@ mod test {
         assert_eq!(sk, sk_deserialized);
 
         let (vrf_proof, vrf_out) = vrf_prove(&msg, &sk, &pk).unwrap(); //Create vrf proof for msg
+        assert!(is_valid(&vrf_proof));
 
         //Serialize/deserialize vrf proof
         let mut proof_serialized = vec![0u8; VRF_PROOF_SIZE];
         serialize_to_buffer(&vrf_proof, &mut proof_serialized).unwrap();
-        let proof_deserialized = deserialize_from_buffer(&proof_serialized).unwrap();
+        let proof_deserialized = deserialize_from_buffer_checked(&proof_serialized).unwrap();
         assert_eq!(vrf_proof, proof_deserialized);
 
         //Serialize/deserialize vrf out (i.e. a field element)

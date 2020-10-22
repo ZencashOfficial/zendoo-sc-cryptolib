@@ -1,0 +1,22 @@
+os: linux
+dist: bionic
+language: generic
+addons:
+  apt:
+    packages:
+      - libxml-xpath-perl
+services:
+  - docker
+
+env:
+  global:
+    - CONTAINER_JAVA_VER="openjdk-8-jdk=8u252-b09-1~16.04"
+    - CONTAINER_RUST_VER="1.41.0"
+
+script: >-
+  source ci/setup_env.sh &&
+  docker build --pull --no-cache -t zencash/zendoo-sc-cryptolib-builder ./ci &&
+  bash -c "docker run --rm -v $(pwd):/build -v ${HOME}/key.asc:/key.asc --tmpfs /tmp:uid=$(id -u),gid=$(id -g),exec,mode=1777 \
+    --tmpfs /run:uid=$(id -u),gid=$(id -g),exec,mode=1777 -e LOCAL_USER_ID=$(id -u) -e LOCAL_GRP_ID=$(id -g) \
+    $(env | grep -E '^CONTAINER_' | sed -n '/^[^\t]/s/=.*//p' | sed '/^$/d' | sed 's/^/-e /g' | tr '\n' ' ') \
+    zencash/zendoo-sc-cryptolib-builder /build/ci/start_ci.sh"

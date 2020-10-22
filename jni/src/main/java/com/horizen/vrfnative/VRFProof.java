@@ -21,19 +21,32 @@ public class VRFProof implements AutoCloseable
 
   private static native byte[] nativeSerializeProof(long proofPointer);
 
-  private static native VRFProof nativeDeserializeProof(byte[] proofBytes);
+  private static native VRFProof nativeDeserializeProof(byte[] proofBytes, boolean checkVRFProof);
 
   private static native void nativefreeProof(long proofPointer);
 
-  public static VRFProof deserialize(byte[] proofBytes) {
+  public static VRFProof deserialize(byte[] proofBytes, boolean checkVRFProof) {
     if (proofBytes.length != PROOF_LENGTH)
       throw new IllegalArgumentException(String.format("Incorrect proof length, %d expected, %d found", PROOF_LENGTH, proofBytes.length));
 
-    return nativeDeserializeProof(proofBytes);
+    return nativeDeserializeProof(proofBytes, checkVRFProof);
+  }
+
+  public static VRFProof deserialize(byte[] proofBytes) {
+    return VRFProof.deserialize(proofBytes, true);
   }
 
   public byte[] serializeProof() {
     return nativeSerializeProof(this.proofPointer);
+  }
+
+  private native boolean nativeIsValidVRFProof(); // jni call to Rust impl
+
+  public boolean isValidVRFProof() {
+    if (proofPointer == 0)
+      throw new IllegalStateException("VRF Proof was freed.");
+
+    return nativeIsValidVRFProof();
   }
 
   public void freeProof() {

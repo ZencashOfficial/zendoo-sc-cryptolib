@@ -1,6 +1,6 @@
 extern crate jni;
 
-use algebra::bytes::{FromBytes, ToBytes};
+use algebra::bytes::{FromBytes, FromBytesChecked, ToBytes};
 
 use std::{ptr::null_mut, any::type_name};
 
@@ -26,6 +26,13 @@ fn read_nullable_raw_pointer<'a, T>(input: *const T) -> Option<&'a T> {
 
 fn deserialize_to_raw_pointer<T: FromBytes>(buffer: &[u8]) -> *mut T {
     match deserialize_from_buffer(buffer) {
+        Ok(t) => Box::into_raw(Box::new(t)),
+        Err(_) => return null_mut(),
+    }
+}
+
+fn deserialize_to_raw_pointer_checked<T: FromBytesChecked>(buffer: &[u8]) -> *mut T {
+    match deserialize_from_buffer_checked(buffer) {
         Ok(t) => Box::into_raw(Box::new(t)),
         Err(_) => return null_mut(),
     }
@@ -221,12 +228,17 @@ pub extern "system" fn Java_com_horizen_schnorrnative_SchnorrPublicKey_nativeDes
     _env: JNIEnv,
     _schnorr_public_key_class: JClass,
     _public_key_bytes: jbyteArray,
+    _check_public_key: jboolean,
 ) -> jobject
 {
     let pk_bytes = _env.convert_byte_array(_public_key_bytes)
         .expect("Cannot read public key bytes.");
 
-    let public_key_pointer: *const SchnorrPk = deserialize_to_raw_pointer(pk_bytes.as_slice());
+    let public_key_pointer: *const SchnorrPk = if _check_public_key == JNI_TRUE {
+        deserialize_to_raw_pointer_checked(pk_bytes.as_slice())
+    } else {
+        deserialize_to_raw_pointer(pk_bytes.as_slice())
+    };
 
     let public_key: jlong = jlong::from(public_key_pointer as i64);
 
@@ -350,12 +362,17 @@ pub extern "system" fn Java_com_horizen_vrfnative_VRFPublicKey_nativeDeserialize
     _env: JNIEnv,
     _vrf_public_key_class: JClass,
     _public_key_bytes: jbyteArray,
+    _check_public_key: jboolean,
 ) -> jobject
 {
     let pk_bytes = _env.convert_byte_array(_public_key_bytes)
         .expect("Cannot read public key bytes.");
 
-    let public_key_pointer: *mut VRFPk = deserialize_to_raw_pointer(pk_bytes.as_slice());
+    let public_key_pointer: *const VRFPk = if _check_public_key == JNI_TRUE {
+        deserialize_to_raw_pointer_checked(pk_bytes.as_slice())
+    } else {
+        deserialize_to_raw_pointer(pk_bytes.as_slice())
+    };
 
     let public_key: jlong = jlong::from(public_key_pointer as i64);
 
@@ -474,12 +491,17 @@ pub extern "system" fn Java_com_horizen_schnorrnative_SchnorrSignature_nativeDes
     _env: JNIEnv,
     _class: JClass,
     _sig_bytes: jbyteArray,
+    _check_sig: jboolean,
 ) -> jobject
 {
     let sig_bytes = _env.convert_byte_array(_sig_bytes)
         .expect("Should be able to convert to Rust byte array");
 
-    let sig_ptr: *const SchnorrSig = deserialize_to_raw_pointer(sig_bytes.as_slice());
+    let sig_ptr: *const SchnorrSig = if _check_sig == JNI_TRUE {
+        deserialize_to_raw_pointer(sig_bytes.as_slice())
+    } else {
+        deserialize_to_raw_pointer_checked(sig_bytes.as_slice())
+    };
 
     let sig: jlong = jlong::from(sig_ptr as i64);
 
@@ -491,6 +513,22 @@ pub extern "system" fn Java_com_horizen_schnorrnative_SchnorrSignature_nativeDes
         .expect("Cannot create signature object.");
 
     *sig_object
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_horizen_schnorrnative_SchnorrSignature_nativeIsValidSignature(
+    _env: JNIEnv,
+    _sig: JObject,
+) -> jboolean
+{
+    let sig = _env.get_field(_sig, "signaturePointer", "J")
+        .expect("Should be able to get field signaturePointer").j().unwrap() as *const SchnorrSig;
+
+    if is_valid(read_raw_pointer(sig)) {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
 }
 
 #[no_mangle]
@@ -1806,12 +1844,17 @@ pub extern "system" fn Java_com_horizen_vrfnative_VRFProof_nativeDeserializeProo
     _env: JNIEnv,
     _class: JClass,
     _proof_bytes: jbyteArray,
+    _check_proof: jboolean,
 ) -> jobject
 {
     let proof_bytes = _env.convert_byte_array(_proof_bytes)
         .expect("Should be able to convert to Rust byte array");
 
-    let proof_ptr: *const VRFProof = deserialize_to_raw_pointer(proof_bytes.as_slice());
+    let proof_ptr: *const VRFProof = if _check_proof == JNI_TRUE {
+        deserialize_to_raw_pointer_checked(proof_bytes.as_slice())
+    } else {
+        deserialize_to_raw_pointer(proof_bytes.as_slice())
+    };
 
     let proof: jlong = jlong::from(proof_ptr as i64);
 
@@ -1823,6 +1866,22 @@ pub extern "system" fn Java_com_horizen_vrfnative_VRFProof_nativeDeserializeProo
         .expect("Cannot create vrf proof object.");
 
     *proof_object
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_horizen_vrfnative_VRFProof_nativeIsValidVRFProof(
+    _env: JNIEnv,
+    _vrf_proof: JObject,
+) -> jboolean
+{
+    let proof = _env.get_field(_vrf_proof, "proofPointer", "J")
+        .expect("Should be able to get field proofPointer").j().unwrap() as *const VRFProof;
+
+    if is_valid(read_raw_pointer(proof)) {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
 }
 
 #[no_mangle]
@@ -2029,7 +2088,7 @@ pub extern "system" fn Java_com_horizen_vrfnative_VRFPublicKey_nativeProofToHash
         read_raw_pointer(m.j().unwrap() as *const FieldElement)
     };
 
-    //Read sig
+    //Read proof
     let proof = {
         let p = _env.get_field(_proof, "proofPointer", "J")
             .expect("Should be able to get field proofPointer");
@@ -2214,7 +2273,8 @@ pub extern "system" fn Java_com_horizen_sigproofnative_NaiveThresholdSigProof_na
     _schnorr_sigs_list: jobjectArray,
     _schnorr_pks_list:  jobjectArray,
     _threshold: jlong,
-    _proving_key_path: JString
+    _proving_key_path: JString,
+    _check_proving_key: jboolean, //WARNING: Very expensive check
 ) -> jobject
 {
     //Extract backward transfers
@@ -2323,7 +2383,6 @@ pub extern "system" fn Java_com_horizen_sigproofnative_NaiveThresholdSigProof_na
     let proving_key_path = _env.get_string(_proving_key_path)
         .expect("Should be able to read jstring as Rust String");
 
-
     //create proof
     let (proof, quality) = match create_naive_threshold_sig_proof(
         pks.as_slice(),
@@ -2332,10 +2391,11 @@ pub extern "system" fn Java_com_horizen_sigproofnative_NaiveThresholdSigProof_na
         &prev_end_epoch_block_hash,
         bt_list.as_slice(),
         threshold,
-        proving_key_path.to_str().unwrap()
+        proving_key_path.to_str().unwrap(),
+        _check_proving_key == JNI_TRUE,
     ) {
         Ok(proof) => proof,
-        Err(_) => return std::ptr::null::<jobject>() as jobject //CRYPTO_ERROR
+        Err(_) => return std::ptr::null::<jobject>() as jobject //CRYPTO_ERROR or IO_ERROR
     };
 
     //Serialize proof
@@ -2375,7 +2435,9 @@ pub extern "system" fn Java_com_horizen_sigproofnative_NaiveThresholdSigProof_na
     _constant: JObject,
     _quality: jlong,
     _sc_proof_bytes: jbyteArray,
-    _verification_key_path: JString
+    _check_proof: jboolean,
+    _verification_key_path: JString,
+    _check_vk: jboolean,
 ) -> jboolean {
 
     //Extract backward transfers
@@ -2451,7 +2513,12 @@ pub extern "system" fn Java_com_horizen_sigproofnative_NaiveThresholdSigProof_na
     //Extract proof
     let proof_bytes = _env.convert_byte_array(_sc_proof_bytes)
         .expect("Should be able to convert to Rust byte array");
-    let proof = match deserialize_from_buffer(&proof_bytes[..]){
+    let result = if _check_proof == JNI_TRUE {
+        deserialize_from_buffer_checked(proof_bytes.as_slice())
+    } else {
+        deserialize_from_buffer(proof_bytes.as_slice())
+    };
+    let proof = match result {
         Ok(proof) => proof,
         Err(_) => return JNI_FALSE // I/O ERROR
     };
@@ -2468,9 +2535,11 @@ pub extern "system" fn Java_com_horizen_sigproofnative_NaiveThresholdSigProof_na
         bt_list.as_slice(),
         quality,
         &proof,
-        vk_path.to_str().unwrap()
+        vk_path.to_str().unwrap(),
+        _check_vk == JNI_TRUE,
+
     ) {
         Ok(result) => if result { JNI_TRUE } else { JNI_FALSE },
-        Err(_) => JNI_FALSE // CRYPTO_ERROR
+        Err(_) => JNI_FALSE // CRYPTO_ERROR or IO_ERROR
     }
 }

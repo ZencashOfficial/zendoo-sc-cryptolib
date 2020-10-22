@@ -83,6 +83,7 @@ public class VRFKeyPairTest {
             assertNotNull("sk deserialization must not fail", sk);
             assertNotNull("message deserialization must not fail", message);
             assertNotNull("proof deserialization must not fail", proof);
+            assertTrue("VRF Proof must be valid", proof.isValidVRFProof());
             assertNotNull("expectedVrfOutput deserialization must not fail", sk);
 
             try(FieldElement vrfOutput = keyPair.getPublicKey().proofToHash(proof, message))
@@ -117,6 +118,7 @@ public class VRFKeyPairTest {
                 )
                 {
                     assertNotNull("Attempt to create vrf proof and output failed.", proofVRFOutputPair);
+                    assertTrue("VRF Proof must be valid", proofVRFOutputPair.getVRFProof().isValidVRFProof());
                     assertNotNull("VRF Proof verification and VRF Output computation must not fail.", vrfOutput);
                     assertEquals("prove() and proof_to_hash() vrf outputs must be equal", proofVRFOutputPair.getVRFOutput(), vrfOutput);
                     assertNull("VRF Proof verification must fail", keyPair.getPublicKey().proofToHash(proofVRFOutputPair.getVRFProof(), wrongFieldElement));
