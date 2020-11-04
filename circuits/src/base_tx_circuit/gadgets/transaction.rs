@@ -21,7 +21,7 @@ use r1cs_crypto::{FieldBasedHashGadget, signature::schnorr::field_based_schnorr:
 }, FieldHasherGadget, FieldBasedSigGadget};
 use crate::base_tx_circuit::{
     primitives::transaction::{
-        Box, NoncedBox, MAX_I_O_BOXES, BaseTransaction,
+        CoinBox, NoncedCoinBox, MAX_I_O_BOXES, BaseTransaction,
     },
     constants::BaseTransactionParameters,
 };
@@ -29,28 +29,23 @@ use std::{
     borrow::Borrow, marker::PhantomData,
 };
 
-//TODO: Maybe we can optimize by removing nonce and id from this struct, even if I suspect
-//      the result won't turn out to be elegant.
-
 #[derive(Clone)]
-pub struct NoncedBoxGadget<
+pub struct CoinBoxGadget<
     ConstraintF: PrimeField,
     G: ProjectiveCurve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
->{
-    pub is_coin_box: Boolean,
+>
+{
     pub box_type: UInt8,
     pub amount: FpGadget<ConstraintF>,
     pub custom_hash: HG::DataGadget,
     pub pk: FieldBasedSchnorrPkGadget<ConstraintF, G, GG>,
     pub proposition_hash: HG::DataGadget,
-    pub nonce: HG::DataGadget,
-    pub id: HG::DataGadget,
 }
 
-impl<ConstraintF, G, GG, H, HG> Eq for NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> Eq for CoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -59,7 +54,7 @@ impl<ConstraintF, G, GG, H, HG> Eq for NoncedBoxGadget<ConstraintF, G, GG, H, HG
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {}
 
-impl<ConstraintF, G, GG, H, HG> PartialEq for NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> PartialEq for CoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -68,18 +63,15 @@ impl<ConstraintF, G, GG, H, HG> PartialEq for NoncedBoxGadget<ConstraintF, G, GG
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
     fn eq(&self, other: &Self) -> bool {
-        self.is_coin_box == other.is_coin_box &&
-            self.box_type == other.box_type &&
+        self.box_type == other.box_type &&
             self.amount == other.amount &&
             self.custom_hash == other.custom_hash &&
             self.pk.pk == other.pk.pk &&
-            self.proposition_hash == other.proposition_hash &&
-            self.nonce == other.nonce &&
-            self.id == other.id
+            self.proposition_hash == other.proposition_hash
     }
 }
 
-impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedBox<ConstraintF, G>, ConstraintF> for NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> AllocGadget<CoinBox<ConstraintF, G>, ConstraintF> for CoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -87,23 +79,19 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedBox<ConstraintF, G>, Constrain
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
-    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError>
-        where
-            F: FnOnce() -> Result<T, SynthesisError>,
-            T: Borrow<NoncedBox<ConstraintF, G>>
+    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError> where
+        F: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<CoinBox<ConstraintF, G>>
     {
-        let (is_coin_box, box_type, amount, custom_hash, pk, proposition_hash, nonce, id) = match f() {
-            Ok(nonced_box) => {
-                let nonced_box = nonced_box.borrow().clone();
+        let (box_type, amount, custom_hash, pk, proposition_hash) = match f() {
+            Ok(coin_box) => {
+                let coin_box = coin_box.borrow().clone();
                 (
-                    Ok(nonced_box.box_data.is_coin_box),
-                    Ok(nonced_box.box_data.box_type as u8),
-                    Ok(nonced_box.box_data.amount),
-                    Ok(nonced_box.box_data.custom_hash),
-                    Ok(nonced_box.box_data.pk),
-                    Ok(nonced_box.box_data.proposition_hash),
-                    Ok(nonced_box.nonce.unwrap()),
-                    Ok(nonced_box.id.unwrap())
+                    Ok(coin_box.box_type as u8),
+                    Ok(coin_box.amount),
+                    Ok(coin_box.custom_hash),
+                    Ok(coin_box.pk),
+                    Ok(coin_box.proposition_hash),
                 )
             },
             _ => (
@@ -112,13 +100,8 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedBox<ConstraintF, G>, Constrain
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
-                Err(SynthesisError::AssignmentMissing),
-                Err(SynthesisError::AssignmentMissing),
-                Err(SynthesisError::AssignmentMissing),
             )
         };
-
-        let is_coin_box = Boolean::alloc(&mut cs.ns(|| "alloc is_coin_box"), || is_coin_box)?;
 
         let box_type = UInt8::alloc(&mut cs.ns(|| "alloc box_type"), || box_type)?;
 
@@ -144,6 +127,208 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedBox<ConstraintF, G>, Constrain
             || proposition_hash
         )?;
 
+        Ok( Self { box_type, amount, custom_hash, pk, proposition_hash } )
+    }
+
+    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(_cs: CS, _f: F) -> Result<Self, SynthesisError> where
+        F: FnOnce() -> Result<T, SynthesisError>,
+        T: Borrow<CoinBox<ConstraintF, G>> {
+        unimplemented!()
+    }
+}
+
+impl<ConstraintF, G, GG, H, HG> ConstantGadget<CoinBox<ConstraintF, G>, ConstraintF> for CoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{
+    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &CoinBox<ConstraintF, G>) -> Self {
+        let box_type = UInt8::constant(value.box_type.clone().into());
+
+        let amount = FpGadget::<ConstraintF>::from_value(
+            &mut cs.ns(|| "hardcode amount"),
+            &value.amount
+        );
+
+        let custom_hash = FpGadget::<ConstraintF>::from_value(
+            &mut cs.ns(|| "hardcoded custom hash"),
+            &value.custom_hash
+        );
+
+        let pk = FieldBasedSchnorrPkGadget::<ConstraintF, G, GG>::from_value(
+            &mut cs.ns(|| "hardcode pk"),
+            &value.pk,
+        );
+
+        let proposition_hash = FpGadget::<ConstraintF>::from_value(
+            &mut cs.ns(|| "hardcode proposition hash"),
+            &value.proposition_hash
+        );
+
+        Self { box_type, amount, custom_hash, pk, proposition_hash }
+    }
+
+    fn get_constant(&self) -> CoinBox<ConstraintF, G> {
+        CoinBox::<ConstraintF, G> {
+            box_type: self.box_type.get_value().unwrap().into(),
+            amount: self.amount.get_constant(),
+            custom_hash: self.custom_hash.get_constant(),
+            pk: self.pk.get_constant(),
+            proposition_hash: self.proposition_hash.get_constant()
+        }
+    }
+}
+
+impl<ConstraintF, G, GG, H, HG> ToConstraintFieldGadget<ConstraintF> for CoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{
+    type FieldGadget = FpGadget<ConstraintF>;
+
+    fn to_field_gadget_elements<CS: ConstraintSystem<ConstraintF>>(
+        &self,
+        mut cs: CS
+    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> {
+        // Let's pack box_type into a FpGadget
+        let box_type_g = {
+            let bits = self.box_type.into_bits_le();
+            FpGadget::<ConstraintF>::from_bits(
+                cs.ns(|| "construct box type"),
+                bits.as_slice()
+            )
+        }?;
+
+        let pk_coords = self.pk.pk.to_field_gadget_elements(cs.ns(|| "pk to field gadget elements"))?;
+        let mut box_data = vec![box_type_g, self.amount.clone(), self.custom_hash.clone()];
+        box_data.extend_from_slice(pk_coords.as_slice());
+        box_data.push(self.proposition_hash.clone());
+        Ok(box_data)
+    }
+}
+
+impl<ConstraintF, G, GG, H, HG> EqGadget<ConstraintF> for CoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{
+    fn is_eq<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
+        let b1 = self.box_type.is_eq(cs.ns(|| "is_eq_1"), &other.box_type)?;
+        let b2 = self.amount.is_eq(cs.ns(|| "is_eq_2"), &other.amount)?;
+        let b3 = self.custom_hash.is_eq(cs.ns(|| "is_eq_3"), &other.custom_hash)?;
+        let b4 = self.pk.pk.is_eq(cs.ns(|| "is_eq_4"), &other.pk.pk)?;
+        let b5 = self.proposition_hash.is_eq(cs.ns(|| "is_eq_5"), &other.proposition_hash)?;
+
+        Boolean::kary_and(
+            cs.ns(|| "b1 && b2 && b3 && b4 && b5"),
+            &[b1, b2, b3, b4, b5]
+        )
+    }
+
+    fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self, should_enforce: &Boolean) -> Result<(), SynthesisError> {
+        self.box_type.conditional_enforce_equal(cs.ns(|| "cond_eq_1"), &other.box_type, should_enforce)?;
+        self.amount.conditional_enforce_equal(cs.ns(|| "cond_eq_2"), &other.amount, should_enforce)?;
+        self.custom_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_3"), &other.custom_hash, should_enforce)?;
+        self.pk.pk.conditional_enforce_equal(cs.ns(|| "cond_eq_4"), &other.pk.pk, should_enforce)?;
+        self.proposition_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_5"), &other.proposition_hash, should_enforce)?;
+
+        Ok(())
+    }
+
+    fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self, should_enforce: &Boolean) -> Result<(), SynthesisError> {
+        self.box_type.conditional_enforce_not_equal(cs.ns(|| "cond_neq_1"), &other.box_type, should_enforce)?;
+        self.amount.conditional_enforce_not_equal(cs.ns(|| "cond_neq_2"), &other.amount, should_enforce)?;
+        self.custom_hash.conditional_enforce_not_equal(cs.ns(|| "cond_neq_3"), &other.custom_hash, should_enforce)?;
+        self.pk.pk.conditional_enforce_not_equal(cs.ns(|| "cond_neq_4"), &other.pk.pk, should_enforce)?;
+        self.proposition_hash.conditional_enforce_not_equal(cs.ns(|| "cond_neq_5"), &other.proposition_hash, should_enforce)?;
+
+        Ok(())
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone)]
+pub struct NoncedCoinBoxGadget<
+    ConstraintF: PrimeField,
+    G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+    GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+    H: FieldBasedHash<Data = ConstraintF>,
+    HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+>
+{
+    pub box_data: CoinBoxGadget<ConstraintF, G, GG, H, HG>,
+    pub nonce: HG::DataGadget,
+    pub id: HG::DataGadget,
+}
+
+impl<ConstraintF, G, GG, H, HG> Eq for NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{}
+
+impl<ConstraintF, G, GG, H, HG> PartialEq for NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.box_data == other.box_data &&
+        self.nonce == other.nonce &&
+        self.id == other.id
+    }
+}
+
+impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedCoinBox<ConstraintF, G>, ConstraintF> for NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{
+    fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError>
+        where
+            F: FnOnce() -> Result<T, SynthesisError>,
+            T: Borrow<NoncedCoinBox<ConstraintF, G>>
+    {
+        let (box_data, nonce, id) = match f() {
+            Ok(nonced_box) => {
+                let nonced_box = nonced_box.borrow().clone();
+                (
+                    Ok(nonced_box.box_data),
+                    Ok(nonced_box.nonce.unwrap()),
+                    Ok(nonced_box.id.unwrap())
+                )
+            },
+            _ => (
+                Err(SynthesisError::AssignmentMissing),
+                Err(SynthesisError::AssignmentMissing),
+                Err(SynthesisError::AssignmentMissing),
+            )
+        };
+
+        let box_data = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
+            cs.ns(|| "alloc box data"),
+            || box_data
+        )?;
+
         let nonce = FpGadget::<ConstraintF>::alloc(
             &mut cs.ns(|| "alloc nonce"),
             || nonce
@@ -154,19 +339,19 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedBox<ConstraintF, G>, Constrain
             || id
         )?;
 
-        Ok(Self {is_coin_box, box_type, amount, custom_hash, pk, proposition_hash, nonce, id })
+        Ok(Self { box_data, nonce, id })
     }
 
     fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(_cs: CS, _f: F) -> Result<Self, SynthesisError>
         where
             F: FnOnce() -> Result<T, SynthesisError>,
-            T: Borrow<NoncedBox<ConstraintF, G>>
+            T: Borrow<NoncedCoinBox<ConstraintF, G>>
     {
         unimplemented!()
     }
 }
 
-impl<ConstraintF, G, GG, H, HG> ConstantGadget<NoncedBox<ConstraintF, G>, ConstraintF> for NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> ConstantGadget<NoncedCoinBox<ConstraintF, G>, ConstraintF> for NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -174,28 +359,11 @@ impl<ConstraintF, G, GG, H, HG> ConstantGadget<NoncedBox<ConstraintF, G>, Constr
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &NoncedBox<ConstraintF, G>) -> Self {
-        let is_coin_box = Boolean::constant(value.box_data.is_coin_box);
-        let box_type = UInt8::constant(value.box_data.box_type.clone().into());
+    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &NoncedCoinBox<ConstraintF, G>) -> Self {
 
-        let amount = FpGadget::<ConstraintF>::from_value(
-            &mut cs.ns(|| "hardcode amount"),
-            &value.box_data.amount
-        );
-
-        let custom_hash = FpGadget::<ConstraintF>::from_value(
-            &mut cs.ns(|| "hardcoded custom hash"),
-            &value.box_data.custom_hash
-        );
-
-        let pk = FieldBasedSchnorrPkGadget::<ConstraintF, G, GG>::from_value(
-            &mut cs.ns(|| "hardcode pk"),
-            &value.box_data.pk,
-        );
-
-        let proposition_hash = FpGadget::<ConstraintF>::from_value(
-            &mut cs.ns(|| "hardcode proposition hash"),
-            &value.box_data.proposition_hash
+        let box_data = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
+            cs.ns(|| "hardcode box_data"),
+            &value.box_data
         );
 
         let nonce = FpGadget::<ConstraintF>::from_value(
@@ -208,27 +376,19 @@ impl<ConstraintF, G, GG, H, HG> ConstantGadget<NoncedBox<ConstraintF, G>, Constr
             &value.id.unwrap()
         );
 
-        Self {is_coin_box, box_type, amount, custom_hash, pk, proposition_hash, nonce, id }
+        Self { box_data, nonce, id }
     }
 
-    fn get_constant(&self) -> NoncedBox<ConstraintF, G> {
-        let box_data = Box::<ConstraintF, G> {
-            is_coin_box: self.is_coin_box.get_value().unwrap(),
-            box_type: self.box_type.get_value().unwrap().into(),
-            amount: self.amount.get_constant(),
-            custom_hash: self.custom_hash.get_constant(),
-            pk: self.pk.get_constant(),
-            proposition_hash: self.proposition_hash.get_constant()
-        };
-        NoncedBox::<ConstraintF, G> {
-            box_data,
+    fn get_constant(&self) -> NoncedCoinBox<ConstraintF, G> {
+        NoncedCoinBox::<ConstraintF, G> {
+            box_data: self.box_data.get_constant(),
             nonce: Some(self.nonce.get_constant()),
             id: Some(self.id.get_constant())
         }
     }
 }
 
-impl<ConstraintF, G, GG, H, HG> NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -236,95 +396,43 @@ impl<ConstraintF, G, GG, H, HG> NoncedBoxGadget<ConstraintF, G, GG, H, HG>
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
-    pub fn get_box_data<CS: ConstraintSystem<ConstraintF>>(
-        &self,
-        mut cs: CS,
-    ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError>
-    {
-        // Let's group is_coin_box and type into a single FpGadget
-        let box_info_g = {
-            let mut bits = vec![self.is_coin_box];
-            bits.extend_from_slice(self.box_type.into_bits_le().as_slice());
-            FpGadget::<ConstraintF>::from_bits(
-                cs.ns(|| "construct box info"),
-                bits.as_slice()
-            )
-        }?;
-
-        let pk_coords = self.pk.pk.to_field_gadget_elements()?;
-        let mut box_data = vec![box_info_g, self.amount.clone(), self.custom_hash.clone()];
-        box_data.extend_from_slice(pk_coords.as_slice());
-        box_data.push(self.proposition_hash.clone());
-        Ok(box_data)
-    }
-
+    #[inline]
+    /// Enforce H(tx_hash_without_nonces, box_index)
+    /// PREREQUISITES: Enforce correct `tx_hash_without_nonces`
     pub fn enforce_nonce_calculation<CS: ConstraintSystem<ConstraintF>>(
         &self,
-        cs: CS,
+        mut cs: CS,
         tx_hash_without_nonces: FpGadget<ConstraintF>,
-        box_index: FpGadget<ConstraintF>, //Note for myself: it can be surely hardcoded
-    ) -> Result<(), SynthesisError>
+        box_index: FpGadget<ConstraintF>, //Note: it can be surely hardcoded in the circuit
+    ) -> Result<HG::DataGadget, SynthesisError>
     {
-        self.conditional_enforce_nonce_calculation(cs, tx_hash_without_nonces, box_index, &Boolean::Constant(true))
+        HG::check_evaluation_gadget(
+            cs.ns(|| "enforce box nonce"),
+            &[tx_hash_without_nonces, box_index]
+        )
     }
 
     #[inline]
-    /// Enforce H(tx_hash_without_nonces, box_index, pk) == `self.nonce`
-    /// PREREQUISITES: Enforce correct `tx_hash_without_nonces`
-    pub fn conditional_enforce_nonce_calculation<CS: ConstraintSystem<ConstraintF>>(
-        &self,
-        mut cs: CS,
-        tx_hash_without_nonces: FpGadget<ConstraintF>,
-        box_index: FpGadget<ConstraintF>, //Note for myself: it can be surely hardcoded in the circuit
-        should_enforce: &Boolean,
-    ) -> Result<(), SynthesisError>
-    {
-        let mut hash_gadget_input = vec![tx_hash_without_nonces, box_index];
-        let pk_coords = self.pk.pk.to_field_gadget_elements()?;
-        hash_gadget_input.extend_from_slice(pk_coords.as_slice());
-
-        let nonce = HG::check_evaluation_gadget(
-            cs.ns(|| "enforce box nonce"),
-            hash_gadget_input.as_slice()
-        )?;
-
-        self.nonce.conditional_enforce_equal(cs.ns(|| "enforce nonce"), &nonce, should_enforce)?;
-
-        Ok(())
-    }
-
+    /// Enforce H(boxtype, value, custom_hash, pk, proposition_hash, nonce)
+    /// PREREQUISITES: Enforce correct nonce for `self` box.
     pub fn enforce_id_calculation<CS: ConstraintSystem<ConstraintF>>(
         &self,
-        cs: CS,
-    ) -> Result<(), SynthesisError>
-    {
-        self.conditional_enforce_id_calculation(cs, &Boolean::Constant(true))
-    }
-
-    #[inline]
-    /// Enforce H(is_coin_box, type, value, custom_hash, pk, proposition_hash, nonce) == `self.id`
-    /// PREREQUISITES: Enforce correct nonce for `self` box.
-    pub fn conditional_enforce_id_calculation<CS: ConstraintSystem<ConstraintF>>(
-        &self,
         mut cs: CS,
-        should_enforce: &Boolean,
-    ) -> Result<(), SynthesisError>
+    ) -> Result<HG::DataGadget, SynthesisError>
     {
-        let mut hash_gadget_input = self.get_box_data(cs.ns(|| "box data"))?;
+        let mut hash_gadget_input = self.box_data.to_field_gadget_elements(
+            cs.ns(|| "box data to field gadget elements")
+        )?;
         hash_gadget_input.push(self.nonce.clone());
 
-        let id = HG::check_evaluation_gadget(
+        HG::check_evaluation_gadget(
             cs.ns(|| "enforce box id"),
             hash_gadget_input.as_slice()
-        )?;
-
-        self.id.conditional_enforce_equal(cs.ns(|| "enforce id"), &id, should_enforce)?;
-
-        Ok(())
+        )
     }
 }
 
-impl<ConstraintF, G, GG, H, HG> FieldHasherGadget<H, ConstraintF, HG> for NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> FieldHasherGadget<H, ConstraintF, HG> for NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -333,15 +441,17 @@ impl<ConstraintF, G, GG, H, HG> FieldHasherGadget<H, ConstraintF, HG> for Nonced
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
     #[inline]
-    fn enforce_hash(
+    /// Will be the leaf of the Merkle Tree
+    fn enforce_hash<CS: ConstraintSystem<ConstraintF>>(
         &self,
+        cs: CS,
         _personalization: Option<&[HG::DataGadget]>
     ) -> Result<HG::DataGadget, SynthesisError> {
-        Ok(self.id.clone())
+        self.enforce_id_calculation(cs)
     }
 }
 
-impl<ConstraintF, G, GG, H, HG> EqGadget<ConstraintF> for NoncedBoxGadget<ConstraintF, G, GG, H, HG>
+impl<ConstraintF, G, GG, H, HG> EqGadget<ConstraintF> for NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -350,49 +460,34 @@ impl<ConstraintF, G, GG, H, HG> EqGadget<ConstraintF> for NoncedBoxGadget<Constr
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
     fn is_eq<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
-        let b0 = self.is_coin_box.is_eq(cs.ns(|| "is_eq_0"), &other.is_coin_box)?;
-        let b1 = self.box_type.is_eq(cs.ns(|| "is_eq_1"), &other.box_type)?;
-        let b2 = self.amount.is_eq(cs.ns(|| "is_eq_2"), &other.amount)?;
-        let b3 = self.custom_hash.is_eq(cs.ns(|| "is_eq_3"), &other.custom_hash)?;
-        let b4 = self.pk.pk.is_eq(cs.ns(|| "is_eq_4"), &other.pk.pk)?;
-        let b5 = self.proposition_hash.is_eq(cs.ns(|| "is_eq_5"), &other.proposition_hash)?;
-        let b6 = self.nonce.is_eq(cs.ns(|| "is_eq_6"), &other.nonce)?;
-        let b7 = self.id.is_eq(cs.ns(|| "is_eq_7"), &other.id)?;
+        let b1 = self.box_data.is_eq(cs.ns(|| "is_eq_1"), &other.box_data)?;
+        let b2 = self.nonce.is_eq(cs.ns(|| "is_eq_2"), &other.nonce)?;
+        let b3 = self.id.is_eq(cs.ns(|| "is_eq_3"), &other.id)?;
 
         Boolean::kary_and(
-            cs.ns(|| "b0 && b1 && b2 && b3 && b4 && b5 && b6 && b7"),
-            &[b0, b1, b2, b3, b4, b5, b6, b7]
+            cs.ns(|| "b1 && b2 && b3"),
+            &[b1, b2, b3]
         )
     }
 
     fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self, should_enforce: &Boolean) -> Result<(), SynthesisError> {
-        self.is_coin_box.conditional_enforce_equal(cs.ns(|| "cond_eq_0"), &other.is_coin_box, should_enforce)?;
-        self.box_type.conditional_enforce_equal(cs.ns(|| "cond_eq_1"), &other.box_type, should_enforce)?;
-        self.amount.conditional_enforce_equal(cs.ns(|| "cond_eq_2"), &other.amount, should_enforce)?;
-        self.custom_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_3"), &other.custom_hash, should_enforce)?;
-        self.pk.pk.conditional_enforce_equal(cs.ns(|| "cond_eq_4"), &other.pk.pk, should_enforce)?;
-        self.proposition_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_5"), &other.proposition_hash, should_enforce)?;
-        self.nonce.conditional_enforce_equal(cs.ns(|| "cond_eq_6"), &other.nonce, should_enforce)?;
-        self.id.conditional_enforce_equal(cs.ns(|| "cond_eq_7"), &other.id, should_enforce)?;
+        self.box_data.conditional_enforce_equal(cs.ns(|| "cond_eq_1"), &other.box_data, should_enforce)?;
+        self.nonce.conditional_enforce_equal(cs.ns(|| "cond_eq_2"), &other.nonce, should_enforce)?;
+        self.id.conditional_enforce_equal(cs.ns(|| "cond_eq_3"), &other.id, should_enforce)?;
 
         Ok(())
     }
 
     fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self, should_enforce: &Boolean) -> Result<(), SynthesisError> {
-        self.is_coin_box.conditional_enforce_not_equal(cs.ns(|| "cond_neq_0"), &other.is_coin_box, should_enforce)?;
-        self.box_type.conditional_enforce_not_equal(cs.ns(|| "cond_neq_1"), &other.box_type, should_enforce)?;
-        self.amount.conditional_enforce_not_equal(cs.ns(|| "cond_neq_2"), &other.amount, should_enforce)?;
-        self.custom_hash.conditional_enforce_not_equal(cs.ns(|| "cond_neq_3"), &other.custom_hash, should_enforce)?;
-        self.pk.pk.conditional_enforce_not_equal(cs.ns(|| "cond_neq_4"), &other.pk.pk, should_enforce)?;
-        self.proposition_hash.conditional_enforce_not_equal(cs.ns(|| "cond_neq_5"), &other.proposition_hash, should_enforce)?;
-        self.nonce.conditional_enforce_not_equal(cs.ns(|| "cond_neq_6"), &other.nonce, should_enforce)?;
-        self.id.conditional_enforce_not_equal(cs.ns(|| "cond_neq_7"), &other.id, should_enforce)?;
+        self.box_data.conditional_enforce_not_equal(cs.ns(|| "cond_neq_1"), &other.box_data, should_enforce)?;
+        self.nonce.conditional_enforce_not_equal(cs.ns(|| "cond_neq_2"), &other.nonce, should_enforce)?;
+        self.id.conditional_enforce_not_equal(cs.ns(|| "cond_neq_3"), &other.id, should_enforce)?;
 
         Ok(())
     }
 }
 
-////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
 pub(crate) struct InputBoxGadget<
@@ -403,7 +498,7 @@ pub(crate) struct InputBoxGadget<
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 >
 {
-    box_: NoncedBoxGadget<ConstraintF, G, GG, H, HG>,
+    box_: NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>,
     sig:  FieldBasedSchnorrSigGadget<ConstraintF, G>,
     is_padding: Boolean,
 }
@@ -417,7 +512,7 @@ pub(crate) struct OutputBoxGadget<
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 >
 {
-    box_: NoncedBoxGadget<ConstraintF, G, GG, H, HG>,
+    box_: CoinBoxGadget<ConstraintF, G, GG, H, HG>,
     is_padding: Boolean,
 }
 
@@ -432,10 +527,18 @@ pub struct BaseTransactionGadget<
     P: BaseTransactionParameters<ConstraintF, G>,
 >
 {
-    inputs: Vec<InputBoxGadget<ConstraintF, G, GG, H, HG>>,
-    outputs: Vec<OutputBoxGadget<ConstraintF, G, GG, H, HG>>,
-    fee: FpGadget<ConstraintF>,
-    timestamp: FpGadget<ConstraintF>,
+    /// Coinboxes related data that we manage explicitly in the circuit
+    pub(crate) inputs: Vec<InputBoxGadget<ConstraintF, G, GG, H, HG>>,
+    pub(crate) outputs: Vec<OutputBoxGadget<ConstraintF, G, GG, H, HG>>,
+    pub(crate) fee: FpGadget<ConstraintF>,
+    pub(crate) timestamp: FpGadget<ConstraintF>,
+
+    /// Non coinboxes related data that we don't manage explicitly, but
+    /// that we need anyway to reconstruct the tx hash
+    pub(crate) custom_fields_hash: FpGadget<ConstraintF>,
+    pub(crate) non_coin_boxes_input_ids_cumulative_hash: FpGadget<ConstraintF>,
+    pub(crate) non_coin_boxes_output_data_cumulative_hash: FpGadget<ConstraintF>,
+
     _parameters: PhantomData<P>,
 }
 
@@ -455,17 +558,28 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
         F: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<BaseTransaction<ConstraintF, G, H, P>>
     {
-        let (inputs, outputs, fee, timestamp) = match f() {
+        let (
+            inputs, outputs,
+            fee, timestamp, custom_fields_hash,
+            non_coin_boxes_input_ids_cumulative_hash,
+            non_coin_boxes_output_data_cumulative_hash
+        ) = match f() {
             Ok(tx) => {
                 let tx = tx.borrow().clone();
                 (
                     Ok(tx.inputs.clone()),
                     Ok(tx.outputs.clone()),
                     Ok(tx.fee),
-                    Ok(tx.timestamp)
+                    Ok(tx.timestamp),
+                    Ok(tx.custom_fields_hash),
+                    Ok(tx.non_coin_boxes_input_ids_cumulative_hash),
+                    Ok(tx.non_coin_boxes_output_data_cumulative_hash),
                 )
             },
             _ => (
+                Err(SynthesisError::AssignmentMissing),
+                Err(SynthesisError::AssignmentMissing),
+                Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
                 Err(SynthesisError::AssignmentMissing),
@@ -476,12 +590,12 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
         let mut input_gs = Vec::with_capacity(MAX_I_O_BOXES);
         let mut output_gs = Vec::with_capacity(MAX_I_O_BOXES);
 
-        let padding_input_box_g = NoncedBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
+        let padding_input_box_g = NoncedCoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
             cs.ns(|| "hardcode padding input box"),
             &(P::PADDING_INPUT_BOX.box_)
         );
 
-        let padding_output_box_g = NoncedBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
+        let padding_output_box_g = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
             cs.ns(|| "hardcode padding output box"),
             &(P::PADDING_OUTPUT_BOX)
         );
@@ -494,7 +608,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
                 || Ok(input.sig.clone())
             )?;
 
-            let input_g = NoncedBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
+            let input_g = NoncedCoinBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
                 cs.ns(|| format!("alloc_nonced_input_box_{}", i)),
                 || Ok(input.box_)
             )?;
@@ -516,8 +630,8 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
         assert_eq!(input_gs.len(), MAX_I_O_BOXES);
 
         outputs?.into_iter().enumerate().map(|(i, output)|{
-            let output_g = NoncedBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
-                cs.ns(|| format!("alloc_nonced_output_box_{}", i)),
+            let output_g = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
+                cs.ns(|| format!("alloc_output_box_{}", i)),
                 || Ok(output)
             )?;
 
@@ -548,11 +662,30 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
             )
         }?;
 
+        // Alloc non coinboxes related data
+        let custom_fields_hash = FpGadget::<ConstraintF>::alloc(
+            cs.ns(|| "alloc custom_fields_hash"),
+            || custom_fields_hash
+        )?;
+
+        let non_coin_boxes_input_ids_cumulative_hash = FpGadget::<ConstraintF>::alloc(
+            cs.ns(|| "alloc non_coin_boxes_input_ids_cumulative_hash"),
+            || non_coin_boxes_input_ids_cumulative_hash
+        )?;
+
+        let non_coin_boxes_output_data_cumulative_hash = FpGadget::<ConstraintF>::alloc(
+            cs.ns(|| "alloc non_coin_boxes_output_data_cumulative_hash"),
+            || non_coin_boxes_output_data_cumulative_hash
+        )?;
+
         Ok(Self {
             inputs: input_gs,
             outputs: output_gs,
             fee,
             timestamp,
+            custom_fields_hash,
+            non_coin_boxes_input_ids_cumulative_hash,
+            non_coin_boxes_output_data_cumulative_hash,
             _parameters: PhantomData,
         })
     }
@@ -574,6 +707,8 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
         P: BaseTransactionParameters<ConstraintF, G>,
 {
     /// PREREQUISITES: Enforce correct input ids
+    /// TODO: Instead of enforcing input ids, should we enforce only output ids and assume
+    ///       input ids are correct (Like we do for nonces) ? Probably yes
     pub fn enforce_tx_hash_without_nonces<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
@@ -594,11 +729,12 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
         )?;
 
         // H(output_data)
+        //TODO: Is this the correct way ? Or we simply take the hash of output.box_.to_field_gadget_elements() ?
         let mut hash_outputs = Vec::new();
 
         self.outputs.iter().enumerate().map(
             |(index, output)| {
-                let output_as_fes = output.box_.get_box_data(
+                let output_as_fes = output.box_.to_field_gadget_elements(
                     cs.ns(|| format!("get_box_data_output_{}", index))
                 )?;
                 hash_outputs.extend_from_slice(output_as_fes.as_slice());
@@ -614,53 +750,23 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
         // tx_hash_without_nonces
         let tx_hash_without_nonces = HG::check_evaluation_gadget(
             cs.ns(|| "tx_hash_without_nonces"),
-            &[inputs_digest, outputs_digest, self.fee.clone(), self.timestamp.clone()]
+            &[
+                inputs_digest, self.non_coin_boxes_input_ids_cumulative_hash.clone(),
+                outputs_digest, self.non_coin_boxes_output_data_cumulative_hash.clone(),
+                self.fee.clone(), self.timestamp.clone(), self.custom_fields_hash.clone()
+            ]
         )?;
 
         Ok(tx_hash_without_nonces)
     }
 
-    /// PREREQUISITES: Enforce correct input ids and output ids
+    /// message_to_sign == tx_hash_without_nonces
     pub fn enforce_message_to_sign<CS: ConstraintSystem<ConstraintF>>(
         &self,
-        mut cs: CS,
+        cs: CS,
     ) -> Result<HG::DataGadget, SynthesisError>
     {
-        // H(input_ids)
-        let mut hash_inputs = Vec::new();
-
-        self.inputs.iter().enumerate().for_each(
-            |(_, input)| {
-                hash_inputs.push(input.box_.id.clone())
-            }
-        );
-
-        let inputs_digest = HG::check_evaluation_gadget(
-            cs.ns(|| "H(input_ids)"),
-            hash_inputs.as_slice()
-        )?;
-
-        //H(output_ids)
-        let mut hash_outputs = Vec::new();
-
-        self.outputs.iter().enumerate().for_each(
-            |(_, output)| {
-                hash_outputs.push(output.box_.id.clone())
-            }
-        );
-
-        let outputs_digest = HG::check_evaluation_gadget(
-            cs.ns(|| "H(outputs_ids)"),
-            hash_outputs.as_slice()
-        )?;
-
-        // message_to_sign
-        let message_to_sign = HG::check_evaluation_gadget(
-            cs.ns(|| "message_to_sign"),
-            &[inputs_digest, outputs_digest, self.fee.clone(), self.timestamp.clone()]
-        )?;
-
-        Ok(message_to_sign)
+        self.enforce_tx_hash_without_nonces(cs)
     }
 
     /// Enforces:
@@ -682,17 +788,17 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
             |(index, input)| {
                 FieldBasedSchnorrSigVerificationGadget::<ConstraintF, G, GG, H, HG>::conditionally_enforce_signature_verification(
                     cs.ns(|| format!("verify_sig_for_input_{}", index)),
-                    &input.box_.pk,
+                    &input.box_.box_data.pk,
                     &input.sig,
                     &[message_to_sign.clone()],
-                    &input.is_padding,
+                    &input.is_padding.not(),
                 )?;
 
                 let to_add = FpGadget::<ConstraintF>::conditionally_select(
                     cs.ns(|| format!("add_input_amount_or_0_{}", index)),
                     &input.is_padding,
-                    &input.box_.amount,
                     &zero,
+                    &input.box_.box_data.amount,
                 )?;
 
                 inputs_sum = inputs_sum.add(
@@ -708,8 +814,8 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
                 let to_add = FpGadget::<ConstraintF>::conditionally_select(
                     cs.ns(|| format!("add_output_amount_or_0_{}", index)),
                     &output.is_padding,
-                    &output.box_.amount,
                     &zero,
+                    &output.box_.amount,
                 )?;
                 outputs_sum = outputs_sum.add(
                     cs.ns(|| format!("add_output_value_{}", index)),

@@ -17,7 +17,6 @@ use rand::rngs::OsRng;
 pub enum BoxType {
     CoinBox,
     ForgerBox,
-    WithdrawalBox,
     CustomBox,
 }
 
@@ -26,7 +25,6 @@ impl From<u8> for BoxType {
         match raw {
             0x0 => BoxType::CoinBox,
             0x1 => BoxType::ForgerBox,
-            0x2 => BoxType::WithdrawalBox,
             0xff => BoxType::CustomBox,
             _ => unreachable!(),
         }
@@ -38,14 +36,13 @@ impl From<BoxType> for u8 {
         match box_type {
             BoxType::CoinBox => 0x0,
             BoxType::ForgerBox => 0x1,
-            BoxType::WithdrawalBox => 0x2,
             BoxType::CustomBox => 0xff,
         }
     }
 }
 
 impl<F: PrimeField> ToConstraintField<F> for BoxType {
-    fn to_field_elements(&self) -> Result<Vec<F>, std::boxed::Box<dyn std::error::Error>> {
+    fn to_field_elements(&self) -> Result<Vec<F>, Box<dyn std::error::Error>> {
         let raw_type: u8 = self.clone().into();
         [raw_type].to_field_elements()
     }
@@ -54,8 +51,7 @@ impl<F: PrimeField> ToConstraintField<F> for BoxType {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub struct Box<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
-    pub is_coin_box: bool,
+pub struct CoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub box_type: BoxType,
     pub amount: F,
     pub custom_hash: F,
@@ -63,13 +59,12 @@ pub struct Box<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub proposition_hash: F,
 }
 
-impl<F, G> Box<F, G>
+impl<F, G> CoinBox<F, G>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>
 {
     pub fn new(
-        is_coin_box: bool,
         box_type: BoxType,
         amount: F,
         custom_hash: F,
@@ -78,7 +73,7 @@ impl<F, G> Box<F, G>
     ) -> Result<Self, Error>
     {
         let new = Self::new_unchecked(
-            is_coin_box, box_type, amount,
+            box_type, amount,
             custom_hash, pk, proposition_hash
         );
         match new.is_valid() {
@@ -88,7 +83,6 @@ impl<F, G> Box<F, G>
     }
 
     pub fn new_unchecked(
-        is_coin_box: bool,
         box_type: BoxType,
         amount: F,
         custom_hash: F,
@@ -97,48 +91,37 @@ impl<F, G> Box<F, G>
     ) -> Self
     {
         Self{
-            is_coin_box, box_type, amount,
+            box_type, amount,
             custom_hash, pk, proposition_hash
         }
     }
 }
 
-impl <F, G> SemanticallyValid for Box<F, G>
+impl <F, G> SemanticallyValid for CoinBox<F, G>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>
 {
+    ///TODO: Expand this ?
     fn is_valid(&self) -> bool {
-        let box_type_correct = match self.box_type {
-            BoxType::CoinBox =>  self.is_coin_box,
-            BoxType::ForgerBox => self.is_coin_box,
-            BoxType::WithdrawalBox => !self.is_coin_box,
-            BoxType::CustomBox => true,
-        };
-        box_type_correct && self.pk.0.is_valid()
+        self.pk.0.is_valid()
     }
 }
 
-impl<F, G> ToConstraintField<F> for Box<F, G>
+impl<F, G> ToConstraintField<F> for CoinBox<F, G>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>
 {
 
-    fn to_field_elements(&self) -> Result<Vec<F>, std::boxed::Box<dyn std::error::Error>> {
-        // Read is_coin_box, box_type, into one field element
-        let mut buff = Vec::with_capacity(2);
+    fn to_field_elements(&self) -> Result<Vec<F>, Box<dyn std::error::Error>> {
 
-        buff.push( if self.is_coin_box { 1u8 } else { 0u8 });
-        let box_type: u8 = self.box_type.clone().into();
-        buff.push(box_type);
-
-        let box_info = {
-            let fes = buff.to_field_elements().map_err(|_| Error::InvalidBox)?;
+        let box_type = {
+            let fes = self.box_type.to_field_elements().map_err(|_| Error::InvalidBox)?;
             assert!(fes.len() == 1);
             fes[0]
         };
-        let mut self_as_fes = vec![box_info, self.amount, self.custom_hash];
+        let mut self_as_fes = vec![box_type, self.amount, self.custom_hash];
         self_as_fes.extend_from_slice(self.pk.0.to_field_elements().map_err(|_| Error::InvalidBox)?.as_slice());
         self_as_fes.push(self.proposition_hash);
         Ok(self_as_fes)
@@ -148,14 +131,14 @@ impl<F, G> ToConstraintField<F> for Box<F, G>
 ////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub struct NoncedBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>>{
-    pub box_data: Box<F, G>,
+pub struct NoncedCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>>{
+    pub box_data: CoinBox<F, G>,
     pub nonce: Option<F>,
     pub id: Option<F>,
 }
 
-impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> NoncedBox<F, G> {
-    pub fn new(box_data: Box<F, G>) -> Self {
+impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> NoncedCoinBox<F, G> {
+    pub fn new(box_data: CoinBox<F, G>) -> Self {
         Self {box_data, nonce: None, id: None }
     }
 
@@ -166,21 +149,17 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> NoncedBox<F, G> {
         box_index: u8,
     ) -> Result <(), Error>
     {
-        // Compute nonce = H(tx_hash_without_nonces, box_index, pk) and update self with it
+        // Compute nonce = H(tx_hash_without_nonces, box_index) and update self with it
         let box_index_fe = F::read(vec![box_index].as_slice()).unwrap();
-        let pk = self.box_data.pk.0;
         let mut digest = H::init(None);
         digest
             .update(tx_hash_without_nonces)
             .update(box_index_fe);
-        let pk_coords = pk.to_field_elements()
-            .map_err(|_| Error::InvalidBox)?;
-        pk_coords.iter().for_each(|&coord| { digest.update(coord); });
         self.nonce = Some(digest.finalize());
 
-        // Compute id = H(is_coin_box, type, value, custom_hash, pk, proposition_hash, nonce)
-        // and update self with it. NOTE: I changed with respect to Oleksandr document because
-        // it's more comfortable
+        // Compute id = H(type, value, custom_hash, pk, proposition_hash, nonce)
+        // and update self with it. NOTE: I changed with respect to spec document because
+        // we save 1 hash with respect to do id = H(H(type, value, custom_hash, pk, proposition_hash), nonce)
         digest.reset(None);
         let mut box_data_fes = self.box_data.to_field_elements()
             .map_err(|_| Error::InvalidBox)?;
@@ -206,19 +185,20 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> NoncedBox<F, G> {
     }
 }
 
-impl<F, G, H> FieldHasher <F, H> for NoncedBox<F, G>
+impl<F, G, H> FieldHasher <F, H> for NoncedCoinBox<F, G>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>
 {
-    /// H(Box) = Box_id
-    fn hash(&self, _personalization: Option<&[F]>) -> Result<F, std::boxed::Box<dyn std::error::Error>> {
-        self.id.ok_or(std::boxed::Box::new(Error::MissingBoxId))
+    /// H(NoncedCoinBox) = Box_id
+    /// Will be the leaf of the MHT
+    fn hash(&self, _personalization: Option<&[F]>) -> Result<F, Box<dyn std::error::Error>> {
+        self.id.ok_or(Box::new(Error::MissingBoxId))
     }
 }
 
-impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> SemanticallyValid for NoncedBox<F, G> {
+impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> SemanticallyValid for NoncedCoinBox<F, G> {
     fn is_valid(&self) -> bool {
         self.box_data.is_valid()
     }
@@ -229,11 +209,11 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> SemanticallyValid
 
 #[derive(Clone)]
 pub struct InputBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
-    pub(crate) box_: NoncedBox<F, G>,
+    pub(crate) box_: NoncedCoinBox<F, G>,
     pub(crate) sig: FieldBasedSchnorrSignature<F, G>
 }
 
-pub type OutputBox<F, G> = NoncedBox<F, G>;
+pub type OutputBox<F, G> = CoinBox<F, G>;
 
 pub const MAX_I_O_BOXES: usize = 2;
 
@@ -247,12 +227,20 @@ pub struct BaseTransaction<
     H: FieldBasedHash<Data = F>,
     P: BaseTransactionParameters<F, G>
 > {
+    /// Coin boxes related data that we manage explicitly in the circuit
     pub(crate) inputs: Vec<InputBox<F, G>>,
     pub(crate) num_inputs: usize,
     pub(crate) outputs: Vec<OutputBox<F, G>>,
     pub(crate) num_outputs: usize,
     pub(crate) fee: F,
     pub(crate) timestamp: u64,
+
+    /// Non coin boxes related data that we don't manage explicitly in the
+    /// circuit but that are still needed to construct tx hash
+    pub(crate) custom_fields_hash: F,
+    pub(crate) non_coin_boxes_input_ids_cumulative_hash: F,
+    pub(crate) non_coin_boxes_output_data_cumulative_hash: F,
+
     _parameters: PhantomData<P>,
     _hash: PhantomData<H>,
 }
@@ -266,11 +254,19 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
 {
     pub fn new(
         inputs: Vec<InputBox<F, G>>,
-        outputs: Vec<Box<F, G>>,
+        outputs: Vec<CoinBox<F, G>>,
         fee: F,
         timestamp: u64,
+        custom_fields_hash: F,
+        non_coin_boxes_input_ids_cumulative_hash: F,
+        non_coin_boxes_output_data_cumulative_hash: F,
     ) -> Result<Self, Error> {
-        let new = Self::new_unchecked(inputs, outputs, fee, timestamp)?;
+        let new = Self::new_unchecked(
+            inputs, outputs, fee, timestamp,
+            custom_fields_hash,
+            non_coin_boxes_input_ids_cumulative_hash,
+            non_coin_boxes_output_data_cumulative_hash,
+        )?;
         match new.is_valid() {
             true => Ok(new),
             false => Err(Error::InvalidTx)
@@ -278,10 +274,13 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
     }
 
     pub fn new_unchecked(
-        inputs: Vec<InputBox<F, G>>,
-        outputs: Vec<Box<F, G>>,
+        mut inputs: Vec<InputBox<F, G>>,
+        mut outputs: Vec<CoinBox<F, G>>,
         fee: F,
         timestamp: u64,
+        custom_fields_hash: F,
+        non_coin_boxes_input_ids_cumulative_hash: F,
+        non_coin_boxes_output_data_cumulative_hash: F,
     ) -> Result<Self, Error> {
         let num_inputs = inputs.len();
         assert!(num_inputs >= 1 && num_inputs <= MAX_I_O_BOXES);
@@ -290,47 +289,39 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         assert!(num_outputs >= 1 && num_outputs <= MAX_I_O_BOXES);
 
         // Pad inputs to `MAX_I_O_BOXES`
-        let mut inputs = inputs.to_vec();
-        inputs.extend_from_slice(
-            vec![P::PADDING_INPUT_BOX; MAX_I_O_BOXES - num_inputs].as_slice()
-        );
+        inputs.extend_from_slice(vec![P::PADDING_INPUT_BOX; MAX_I_O_BOXES - num_inputs].as_slice());
 
         // Create output boxes and pad up to `MAX_I_O_BOXES`
-        let mut outputs = outputs.into_iter().map(|output| {
-                NoncedBox::<F, G>::new(output)
-            }).collect::<Vec<_>>();
         outputs.extend_from_slice(vec![P::PADDING_OUTPUT_BOX; MAX_I_O_BOXES - num_outputs].as_slice());
 
-        // Compute tx_hash_without_nonces and update non padding output boxes with them. Padding
-        // boxes will keep for id and nonce their default values: this will simplify the
-        // circuit implementation because allows us to immediately understand if a box is a
-        // padding box or not.
-        let tx_hash_without_nonces = Self::compute_tx_hash_without_nonces(fee, timestamp, inputs.as_slice(), outputs.as_slice())?;
-        for i in 0..num_outputs {
-            outputs[i].update_with_nonce_and_id::<H>(None, tx_hash_without_nonces, i as u8)?;
-        }
-
-        Ok(Self {inputs, num_inputs, outputs, num_outputs, fee, timestamp, _parameters: PhantomData, _hash: PhantomData})
+        Ok(Self {
+            inputs, num_inputs, outputs, num_outputs, fee, timestamp,
+            custom_fields_hash,
+            non_coin_boxes_input_ids_cumulative_hash,
+            non_coin_boxes_output_data_cumulative_hash,
+            _parameters: PhantomData, _hash: PhantomData
+        })
     }
 
-    /// tx_hash_without_nonces = H(H(inputs_ids), H(outputs_data), timestamp, fee)
-    /// NOTE: We include into the hash also padding input/output boxes: theoretically,
+    /// tx_hash_without_nonces = H(
+    ///                            H(inputs_ids), non_coin_boxes_input_ids_cumulative_hash,
+    ///                            H(outputs_data), non_coin_boxes_output_data_cumulative_hash,
+    ///                            timestamp, fee, custom_fields_hash
+    ///                           )
+    /// NOTE: We include into the hash also padding input/output coin boxes: theoretically,
     /// they do not exist, but if we want to take that into account into the circuit
     /// we should enforce 2 hashes (e.g. for input_ids, we would have H(input_1_id)
     /// if input_2 is null and H(input_1_id, input_2_id) if input_2 is not null, then
     /// we must conditionally select between them); instead, in the circuit, we hash all
     /// a priori, and we enforce this too in the primitive: this allows to halve the cost
     /// of tx hashes inside the circuit.
-    fn compute_tx_hash_without_nonces(
-        fee: F,
-        timestamp: u64,
-        inputs: &[InputBox<F, G>],
-        outputs: &[OutputBox<F, G>]
+    pub fn compute_tx_hash_without_nonces(
+        &self,
     ) -> Result<F, Error> {
         let mut digest = H::init(None);
 
         // H(input_ids)
-        inputs.iter().enumerate().map(
+        self.inputs.iter().enumerate().map(
             |(_, input)| {
                 digest.update(input.box_.id.ok_or(Error::MissingBoxId)?);
                 Ok(())
@@ -340,11 +331,12 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         let inputs_id_hash = digest.finalize();
 
         // H(outputs_data)
+        //TODO: Is this the correct way ? Or we simply take the hash of output.to_field_elements() ?
         digest.reset(None);
 
-        outputs.iter().enumerate().map(
+        self.outputs.iter().enumerate().map(
             |(_, output)| {
-                let output_as_fes = output.box_data.to_field_elements()
+                let output_as_fes = output.to_field_elements()
                     .map_err(|_| Error::InvalidBox)?;
                 output_as_fes.iter().for_each(|&fe| { digest.update(fe); });
                 Ok(())
@@ -358,43 +350,19 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
 
         digest
             .update(inputs_id_hash)
+            .update(self.non_coin_boxes_input_ids_cumulative_hash)
             .update(outputs_data_hash)
-            .update(F::from(timestamp))
-            .update(fee);
+            .update(self.non_coin_boxes_output_data_cumulative_hash)
+            .update(F::from(self.timestamp))
+            .update(self.fee)
+            .update(self.custom_fields_hash);
         Ok(digest.finalize())
     }
 
-    /// message_to_sign = H(H(input_ids), H(output_ids), timestamp, fee)
-    /// See also `get_tx_hash_without_nonces()` NOTE.
+    /// message_to_sign == tx_hash_without_nonces currently
     pub fn get_message_to_sign(&self) -> Result<F, Error>
     {
-        // H(input_ids)
-        let mut input_digest = H::init(None);
-        self.inputs.iter().enumerate().map(
-            |(_, input)| {
-                input_digest.update(input.box_.id.ok_or(Error::MissingBoxId)?);
-                Ok(())
-            }
-        ).collect::<Result<(), Error>>()?;
-        let input_ids_hash = input_digest.finalize();
-
-        //H(output_ids)
-        let mut output_digest = H::init(None);
-        self.outputs.iter().enumerate().map(
-            |(_, output)| {
-                output_digest.update(output.id.ok_or(Error::MissingBoxId)?);
-                Ok(())
-            }
-        ).collect::<Result<(), Error>>()?;
-        let output_ids_hash = output_digest.finalize();
-
-        // message_to_sign
-        Ok(H::init(None)
-            .update(input_ids_hash)
-            .update(output_ids_hash)
-            .update(F::from(self.timestamp))
-            .update(self.fee)
-            .finalize())
+        self.compute_tx_hash_without_nonces()
     }
 
     /// Checks performed:
@@ -403,14 +371,17 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
     /// Here we need to explicitly differentiate between padding
     /// input/output boxes, because padding signatures/pk will not
     /// be valid and thus would lead to the failure of this function.
-    pub fn verify_tx(&self) -> Result<bool, Error> {
+    fn verify_tx(
+        &self,
+    ) -> Result<bool, Error> {
         let mut inputs_sum = F::zero();
         let mut outputs_sum = F::zero();
         let mut signatures_verified = true;
+
         let message_to_sign = self.get_message_to_sign()?;
 
         for i in 0..self.num_inputs {
-            if self.inputs[i].box_.box_data.is_coin_box { inputs_sum += &self.inputs[i].box_.box_data.amount }
+            inputs_sum += &self.inputs[i].box_.box_data.amount;
             signatures_verified &= FieldBasedSchnorrSignatureScheme::<F, G, H> ::verify(
                 &self.inputs[i].box_.box_data.pk,
                 &[message_to_sign],
@@ -419,7 +390,7 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         }
 
         for i in 0..self.num_outputs {
-            if self.outputs[i].box_data.is_coin_box { outputs_sum += &self.outputs[i].box_data.amount }
+            outputs_sum += &self.outputs[i].amount;
         }
 
         Ok(inputs_sum - &outputs_sum - &self.fee == F::zero() &&
@@ -436,7 +407,7 @@ impl<F, G, H, P> FieldHasher<F, H> for BaseTransaction<F, G, H, P>
 {
     /// tx_hash = H(message_to_sign, H(input_sigs))
     /// See also `get_tx_hash_without_nonces()` NOTE
-    fn hash(&self, _personalization: Option<&[F]>) -> Result<F, std::boxed::Box<dyn std::error::Error>> {
+    fn hash(&self, _personalization: Option<&[F]>) -> Result<F, Box<dyn std::error::Error>> {
 
         //H(input_sigs)
         let mut sigs_digest = H::init(None);
