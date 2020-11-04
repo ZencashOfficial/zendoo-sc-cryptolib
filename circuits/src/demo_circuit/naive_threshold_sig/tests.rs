@@ -39,7 +39,7 @@ use r1cs_std::{
 };
 
 use r1cs_core::ConstraintSystem;
-use crate::constants::NaiveThresholdSigParams;
+use crate::demo_circuit::constants::NaiveThresholdSigParams;
 
 use rand::{
     Rng, rngs::OsRng

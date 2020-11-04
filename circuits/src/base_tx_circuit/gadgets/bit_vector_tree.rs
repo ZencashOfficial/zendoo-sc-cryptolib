@@ -12,13 +12,25 @@ use r1cs_std::{
 use r1cs_core::{
     ConstraintSystem, SynthesisError
 };
+use primitives::FieldBasedMerkleTreeParameters;
+use r1cs_crypto::FieldBasedHashGadget;
 
-pub(crate) struct BitVectorTreeGadget<ConstraintF: PrimeField>
+pub(crate) struct BitVectorTreeGadget<P, HGadget, ConstraintF>
+    where
+        P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        ConstraintF: PrimeField,
 {
+    _tree_params: PhantomData<P>,
+    _hash_gadget: PhantomData<HGadget>,
     _field:       PhantomData<ConstraintF>,
 }
 
-impl<ConstraintF: PrimeField> BitVectorTreeGadget<ConstraintF>
+impl<P, HGadget, ConstraintF> BitVectorTreeGadget<P, HGadget, ConstraintF>
+    where
+        P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        ConstraintF: PrimeField,
 {
     pub(crate) fn enforce_bv_leaf_update<CS: ConstraintSystem<ConstraintF>>(
         cs: CS,
@@ -32,7 +44,9 @@ impl<ConstraintF: PrimeField> BitVectorTreeGadget<ConstraintF>
     }
 
     /// PRE-REQUISITES:
-    /// - `bv_leaf_index` is already enforced to the be the index of `bv_leaf`.
+    /// - `bv_leaf_index` is already enforced to the be the index of `bv_leaf`;
+    /// - `utxo_leaf_index` is alreay enforced to be the index of the corresponding
+    ///   leaf in the SCUtxoMerkleTree;
     /// - `bv_tree_batch_size` <= ConstraintF::CAPACITY
     /// The function enforces correct update of the correct bit of `bv_leaf`, desumed
     /// (and enforced) from `utxo_leaf_index`, `bv_tree_batch_size` and `bv_leaf_index` itself.
@@ -47,7 +61,7 @@ impl<ConstraintF: PrimeField> BitVectorTreeGadget<ConstraintF>
     {
         // bv_leaf_index = utxo_leaf_index / bv_tree_batch_size
         // bit_idx_inside_bv_leaf = utxo_leaf_index % bv_tree_batch_size
-        // => bit_idx_inside_bv_leaf = bv_leaf_index * bv_tree_batch_size - utxo_leaf_index
+        //                        = bv_leaf_index * bv_tree_batch_size - utxo_leaf_index
         let bit_idx_inside_bv_leaf = bv_leaf_index
             .mul_by_constant(cs.ns(|| "bv_leaf_index * bv_tree_batch_size"), bv_tree_batch_size)?
             .sub(cs.ns(|| "bv_leaf_index * bv_tree_batch_size - utxo_leaf_index"), utxo_leaf_index)?;
