@@ -20,7 +20,7 @@ use r1cs_crypto::{FieldBasedHashGadget, signature::schnorr::field_based_schnorr:
     FieldBasedSchnorrPkGadget, FieldBasedSchnorrSigGadget, FieldBasedSchnorrSigVerificationGadget
 }, FieldHasherGadget, FieldBasedSigGadget};
 use crate::base_tx_circuit::{
-    primitives::transaction::{
+    base_tx_primitives::transaction::{
         CoinBox, NoncedCoinBox, MAX_I_O_BOXES, BaseTransaction,
     },
     constants::BaseTransactionParameters,

@@ -1,6 +1,6 @@
 use algebra::{PrimeField, ToConstraintField, ProjectiveCurve};
 
-use crate::base_tx_circuit::primitives::transaction::{
+use crate::base_tx_circuit::base_tx_primitives::transaction::{
     InputCoinBox, OutputCoinBox,
 };
 
