@@ -3,7 +3,7 @@ use primitives::{signature::schnorr::field_based_schnorr::{
     FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme, FieldBasedSchnorrPk
 }, FieldBasedHash, FieldHasher, FieldBasedSignatureScheme};
 use crate::base_tx_circuit::{
-    constants::BaseTransactionParameters, BaseTxError as Error
+    constants::BaseTransactionParameters, primitives::BaseTxError as Error
 };
 use std::marker::PhantomData;
 use rand::rngs::OsRng;
