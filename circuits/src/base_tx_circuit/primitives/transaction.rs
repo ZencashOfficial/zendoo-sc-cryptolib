@@ -214,12 +214,12 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> SemanticallyValid
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub struct InputBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
+pub struct InputCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub(crate) box_: NoncedCoinBox<F, G>,
     pub(crate) sig: FieldBasedSchnorrSignature<F, G>
 }
 
-pub type OutputBox<F, G> = CoinBox<F, G>;
+pub type OutputCoinBox<F, G> = CoinBox<F, G>;
 
 pub const MAX_I_O_BOXES: usize = 2;
 
@@ -234,9 +234,9 @@ pub struct BaseTransaction<
     P: BaseTransactionParameters<F, G>
 > {
     /// Coin boxes related data that we manage explicitly in the circuit
-    pub(crate) inputs: Vec<InputBox<F, G>>,
+    pub(crate) inputs: Vec<InputCoinBox<F, G>>,
     pub(crate) num_inputs: usize,
-    pub(crate) outputs: Vec<OutputBox<F, G>>,
+    pub(crate) outputs: Vec<OutputCoinBox<F, G>>,
     pub(crate) num_outputs: usize,
     pub(crate) fee: F,
     pub(crate) timestamp: u64,
@@ -259,7 +259,7 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         P: BaseTransactionParameters<F, G>
 {
     pub fn new(
-        inputs: Vec<InputBox<F, G>>,
+        inputs: Vec<InputCoinBox<F, G>>,
         outputs: Vec<CoinBox<F, G>>,
         fee: F,
         timestamp: u64,
@@ -280,7 +280,7 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
     }
 
     pub fn new_unchecked(
-        mut inputs: Vec<InputBox<F, G>>,
+        mut inputs: Vec<InputCoinBox<F, G>>,
         mut outputs: Vec<CoinBox<F, G>>,
         fee: F,
         timestamp: u64,

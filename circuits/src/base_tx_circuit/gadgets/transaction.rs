@@ -518,7 +518,7 @@ impl<ConstraintF, G, GG, H, HG> EqGadget<ConstraintF> for NoncedCoinBoxGadget<Co
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub(crate) struct InputBoxGadget<
+pub(crate) struct InputCoinBoxGadget<
     ConstraintF: PrimeField,
     G: ProjectiveCurve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
@@ -532,7 +532,7 @@ pub(crate) struct InputBoxGadget<
 }
 
 #[derive(Clone)]
-pub(crate) struct OutputBoxGadget<
+pub(crate) struct OutputCoinBoxGadget<
     ConstraintF: PrimeField,
     G: ProjectiveCurve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
@@ -556,8 +556,8 @@ pub struct BaseTransactionGadget<
 >
 {
     /// Coinboxes related data that we manage explicitly in the circuit
-    pub(crate) inputs: Vec<InputBoxGadget<ConstraintF, G, GG, H, HG>>,
-    pub(crate) outputs: Vec<OutputBoxGadget<ConstraintF, G, GG, H, HG>>,
+    pub(crate) inputs: Vec<InputCoinBoxGadget<ConstraintF, G, GG, H, HG>>,
+    pub(crate) outputs: Vec<OutputCoinBoxGadget<ConstraintF, G, GG, H, HG>>,
     pub(crate) fee: FpGadget<ConstraintF>,
     pub(crate) timestamp: FpGadget<ConstraintF>,
 
@@ -646,7 +646,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
                 &padding_input_box_g
             )?;
 
-            input_gs.push(InputBoxGadget::<ConstraintF, G, GG, H, HG>{
+            input_gs.push(InputCoinBoxGadget::<ConstraintF, G, GG, H, HG>{
                 box_: input_g,
                 sig: input_sig_g,
                 is_padding: is_padding_input
@@ -668,7 +668,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
                 &padding_output_box_g
             )?;
 
-            output_gs.push(OutputBoxGadget::<ConstraintF, G, GG, H, HG>{
+            output_gs.push(OutputCoinBoxGadget::<ConstraintF, G, GG, H, HG>{
                 box_: output_g,
                 is_padding: is_padding_output
             });
