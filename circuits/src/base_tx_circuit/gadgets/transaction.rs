@@ -117,6 +117,8 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<CoinBox<ConstraintF, G>, ConstraintF
 
         // It's safe to not perform any check when allocating the pks, considering that they
         // are public and will be committed through a Merkle Tree Hash anyway.
+        // TODO: Is this true for our setting too, i.e. the consensus enforces the correctness
+        //       of the pks a priori, or we should do it also inside the circuit ?
         let pk = FieldBasedSchnorrPkGadget::<ConstraintF, G, GG>::alloc_without_check(
             &mut cs.ns(|| "alloc pk"),
             || pk
@@ -396,6 +398,32 @@ impl<ConstraintF, G, GG, H, HG> NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 {
+    pub fn from_coin_box_gadget<CS: ConstraintSystem<ConstraintF>>(
+        mut cs: CS,
+        coin_box_gadget: CoinBoxGadget<ConstraintF, G, GG, H, HG>,
+        tx_hash_without_nonces: FpGadget<ConstraintF>,
+        box_index: FpGadget<ConstraintF>, //Note: it can be surely hardcoded in the circuit
+    ) -> Result<Self, SynthesisError>
+    {
+        let mut nonced_coin_box_g = NoncedCoinBoxGadget::<ConstraintF, G, GG, H, HG> {
+            box_data: coin_box_gadget,
+            nonce: FpGadget::<ConstraintF>::zero(&mut cs)?, // Temp value
+            id: FpGadget::<ConstraintF>::zero(&mut cs)?, // Temp value
+        };
+
+        nonced_coin_box_g.nonce = nonced_coin_box_g.enforce_nonce_calculation(
+            cs.ns(|| "enforce nonce for new nonced coin box"),
+            tx_hash_without_nonces,
+            box_index
+        )?;
+
+        nonced_coin_box_g.id = nonced_coin_box_g.enforce_id_calculation(
+            cs.ns(|| "enforce id for new nonced coin box")
+        )?;
+
+        Ok(nonced_coin_box_g)
+    }
+
     #[inline]
     /// Enforce H(tx_hash_without_nonces, box_index)
     /// PREREQUISITES: Enforce correct `tx_hash_without_nonces`
