@@ -78,7 +78,7 @@ impl<F, G> CoinBox<F, G>
         );
         match new.is_valid() {
             true => Ok(new),
-            false => Err(Error::InvalidBox)
+            false => Err(Error::InvalidCoinBox("Attempt to create a semantically invalid coin box".to_owned()))
         }
     }
 
@@ -117,12 +117,16 @@ impl<F, G> ToConstraintField<F> for CoinBox<F, G>
     fn to_field_elements(&self) -> Result<Vec<F>, Box<dyn std::error::Error>> {
 
         let box_type = {
-            let fes = self.box_type.to_field_elements().map_err(|_| Error::InvalidBox)?;
+            let fes = self.box_type.to_field_elements().map_err(
+                |e| Error::InvalidCoinBox(format!("Unable to read box_type as a field element: {}", e.to_string()))
+            )?;
             assert!(fes.len() == 1);
             fes[0]
         };
         let mut self_as_fes = vec![box_type, self.amount, self.custom_hash];
-        self_as_fes.extend_from_slice(self.pk.0.to_field_elements().map_err(|_| Error::InvalidBox)?.as_slice());
+        self_as_fes.extend_from_slice(self.pk.0.to_field_elements().map_err(
+            |e| Error::InvalidCoinBox(format!("Unable to convert pk into field elements: {}", e.to_string()))
+        )?.as_slice());
         self_as_fes.push(self.proposition_hash);
         Ok(self_as_fes)
     }
@@ -162,7 +166,9 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> NoncedCoinBox<F, 
         // we save 1 hash with respect to do id = H(H(type, value, custom_hash, pk, proposition_hash), nonce)
         digest.reset(None);
         let mut box_data_fes = self.box_data.to_field_elements()
-            .map_err(|_| Error::InvalidBox)?;
+            .map_err(|e|
+                Error::InvalidCoinBox(format!("Unable to convert CoinBox into field elements: {}", e.to_string()))
+            )?;
         box_data_fes.push(self.nonce.unwrap());
         box_data_fes.iter().for_each(|&fe| {digest.update(fe);});
         self.id = Some(digest.finalize());
@@ -181,7 +187,7 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> NoncedCoinBox<F, 
             &self.box_data.pk,
             sk,
             &[message_to_sign]
-        ).map_err(|_| Error::InvalidBox)
+        ).map_err(|e| Error::InvalidCoinBox(format!("Error while signing coin box {}", e.to_string())))
     }
 }
 
@@ -194,7 +200,7 @@ impl<F, G, H> FieldHasher <F, H> for NoncedCoinBox<F, G>
     /// H(NoncedCoinBox) = Box_id
     /// Will be the leaf of the MHT
     fn hash(&self, _personalization: Option<&[F]>) -> Result<F, Box<dyn std::error::Error>> {
-        self.id.ok_or(Box::new(Error::MissingBoxId))
+        self.id.ok_or(Box::new(Error::InvalidCoinBox("Missing box id".to_owned())))
     }
 }
 
@@ -269,7 +275,7 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         )?;
         match new.is_valid() {
             true => Ok(new),
-            false => Err(Error::InvalidTx)
+            false => Err(Error::InvalidTx("Attempt to create a semantically invalid transaction".to_owned()))
         }
     }
 
@@ -322,8 +328,8 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
 
         // H(input_ids)
         self.inputs.iter().enumerate().map(
-            |(_, input)| {
-                digest.update(input.box_.id.ok_or(Error::MissingBoxId)?);
+            |(index, input)| {
+                digest.update(input.box_.id.ok_or(Error::InvalidCoinBox(format!("Missing id for box {}", index)))?);
                 Ok(())
             }
         ).collect::<Result<(), Error>>()?;
@@ -335,9 +341,11 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         digest.reset(None);
 
         self.outputs.iter().enumerate().map(
-            |(_, output)| {
+            |(index, output)| {
                 let output_as_fes = output.to_field_elements()
-                    .map_err(|_| Error::InvalidBox)?;
+                    .map_err(
+                        |e| Error::InvalidCoinBox(format!("Unable to convert output box {} to field elements: {}", index, e.to_string()))
+                    )?;
                 output_as_fes.iter().for_each(|&fe| { digest.update(fe); });
                 Ok(())
             }
@@ -386,7 +394,9 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
                 &self.inputs[i].box_.box_data.pk,
                 &[message_to_sign],
                 &self.inputs[i].sig
-            ).map_err(|_| Error::InvalidTx)?;
+            ).map_err(|e|
+                Error::InvalidTx(format!("Unable to verify signature on tx for input box {}: {}", i, e.to_string()))
+            )?;
         }
 
         for i in 0..self.num_outputs {
