@@ -880,10 +880,9 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
     }
 
     /// PREREQUISITES: `message_to_sign` already enforced
-    fn enforce_tx_hash<CS: ConstraintSystem<ConstraintF>>(
+    pub(crate) fn enforce_tx_hash<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
-        _personalization: Option<&[HG::DataGadget]>,
         message_to_sign: FpGadget<ConstraintF>,
     ) -> Result<HG::DataGadget, SynthesisError>
     {
