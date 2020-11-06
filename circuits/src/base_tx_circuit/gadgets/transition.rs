@@ -5,8 +5,8 @@ use r1cs_crypto::{
     merkle_tree::field_based_mht::FieldBasedMerkleTreePathGadget,
 };
 use r1cs_std::{
-    eq::EqGadget,
-    bits::boolean::Boolean
+    bits::boolean::Boolean,
+    select::CondSelectGadget,
 };
 use r1cs_core::{
     ConstraintSystem, SynthesisError
@@ -37,26 +37,6 @@ impl<P, HGadget, ConstraintF> MerkleTreeTransitionGadget <P, HGadget, Constraint
         ConstraintF: PrimeField,
 {
 
-    pub(crate) fn enforce_state_transition<CS: ConstraintSystem<ConstraintF>>(
-        cs: CS,
-        start_root: &HGadget::DataGadget,
-        start_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
-        start_leaf: &HGadget::DataGadget,
-        new_start_leaf: &HGadget::DataGadget,
-        dest_root: &HGadget::DataGadget,
-        dest_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
-        dest_leaf: &HGadget::DataGadget,
-        new_dest_leaf: &HGadget::DataGadget,
-    ) -> Result<(), SynthesisError>
-    {
-        Self::conditionally_enforce_state_transition(
-            cs, start_root, start_path,
-            start_leaf, new_start_leaf, dest_root,
-            dest_path, dest_leaf, new_dest_leaf,
-            &Boolean::Constant(true)
-        )
-    }
-
     /// We need to enforce transition from `start_root` to `dest_root` following the
     /// replacement of `start_leaf` with `new_start_leaf` (at the same position) and `dest_leaf`
     /// with `new_dest_leaf` (at the same position). In order to do this, we introduce another
@@ -82,56 +62,78 @@ impl<P, HGadget, ConstraintF> MerkleTreeTransitionGadget <P, HGadget, Constraint
     /// - 2) + 3) + 4) will prove that the value of `new_start_leaf` was unchanged and was
     ///   indeed `new_start_leaf` in Merkle Trees with root `interim_root` and `dest_root`;
     /// Thus all 4, combined, will prove our statement.
+    /// If `should_enforce` is set to True, the function will do exactly what as stated above
+    /// and return `dest_root`; otherwise does nothing and return the initial root `start_root`.
     pub(crate) fn conditionally_enforce_state_transition<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         start_root: &HGadget::DataGadget,
         start_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
         start_leaf: &HGadget::DataGadget,
         new_start_leaf: &HGadget::DataGadget,
-        dest_root: &HGadget::DataGadget,
         dest_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
         dest_leaf: &HGadget::DataGadget,
         new_dest_leaf: &HGadget::DataGadget,
         should_enforce: &Boolean,
-    ) -> Result<(), SynthesisError>
+    ) -> Result<HGadget::DataGadget, SynthesisError>
     {
-        // Enforce `start_leaf` belonging to `start_root`.
-        start_path.conditionally_check_membership(
-            cs.ns(|| "start_leaf belongs to start_root"),
+        // Enforce replacement of `start_leaf` with `new_start_leaf` in tree `start_root`
+        // producing a new tree with root `interim_root`
+        let interim_root = Self::conditionally_enforce_leaf_replacement(
+            cs.ns(|| "enforce replacement of start leaf"),
             start_root,
+            start_path,
             start_leaf,
+            new_start_leaf,
             should_enforce
         )?;
 
-        // Enforce new Merkle Tree root after having replaced `start_leaf` with `new_start_leaf`.
-        let interim_root_1 = start_path.enforce_merkle_path(
-            cs.ns(|| "enforce interim root with new_start_leaf"),
-            new_start_leaf
-        )?;
-
-        // Enforce `dest_leaf` belonging to the same Merkle Tree of `new_start_before`
-        let interim_root_2 = dest_path.enforce_merkle_path(
-            cs.ns(|| "enforce interim root with dest_leaf"),
-            dest_leaf
-        )?;
-
-        // We can save this instruction by calling `conditionally_check_membership`
-        // with `interim_root_1` in the instruction above, but let's keep this for
-        // better readability (number of constraints is the same anyway).
-        interim_root_1.conditional_enforce_equal(
-            cs.ns(|| "interim_root_1 == interim_root_2"),
-            &interim_root_2,
-            should_enforce,
-        )?;
-
-        // Finally, enforce `new_dest_leaf` belonging to `dest_root`
-        dest_path.conditionally_check_membership(
-            cs.ns(|| "new_dest_leaf belongs to dest_root"),
-            dest_root,
+        // Enforce replacement of `dest_leaf` with `new_dest_leaf` in the tree with root
+        // `interim_root`, producing a new tree with root `dest_root`
+        let dest_root = Self::conditionally_enforce_leaf_replacement(
+            cs.ns(|| "enforce replacement of dest leaf"),
+            &interim_root,
+            dest_path,
+            dest_leaf,
             new_dest_leaf,
             should_enforce
         )?;
 
-        Ok(())
+        Ok(dest_root)
+    }
+
+    /// If `should_enforce` is True, enforce replacement of `leaf` at `path`, with a `new_leaf`
+    /// at the same `path`, in a Merkle Tree rooted at `root`, returning the new_root. Otherwise
+    /// does nothing and returns the old root `root`.
+    pub(crate) fn conditionally_enforce_leaf_replacement<CS: ConstraintSystem<ConstraintF>>(
+        mut cs: CS,
+        root: &HGadget::DataGadget,
+        path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        leaf: &HGadget::DataGadget,
+        new_leaf: &HGadget::DataGadget,
+        should_enforce: &Boolean,
+    ) -> Result<HGadget::DataGadget, SynthesisError>
+    {
+        // Enforce `leaf` belonging to `root`.
+        path.conditionally_check_membership(
+            cs.ns(|| "leaf belongs to root"),
+            root,
+            leaf,
+            should_enforce
+        )?;
+
+        // Enforce new Merkle Tree root after having replaced `leaf` with `new_leaf`.
+        let new_root = path.enforce_merkle_path(
+            cs.ns(|| "enforce new_root with new_start_leaf"),
+            new_leaf
+        )?;
+
+        let return_root = HGadget::DataGadget::conditionally_select(
+            cs.ns(|| "return new root or root"),
+            should_enforce,
+            &new_root,
+            root
+        )?;
+
+        Ok(return_root)
     }
 }

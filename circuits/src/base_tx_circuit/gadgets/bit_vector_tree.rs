@@ -15,7 +15,7 @@ use r1cs_core::{
 use primitives::FieldBasedMerkleTreeParameters;
 use r1cs_crypto::FieldBasedHashGadget;
 
-pub(crate) struct BitVectorTreeGadget<P, HGadget, ConstraintF>
+pub struct BitVectorTreeGadget<P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
         HGadget: FieldBasedHashGadget<P::H, ConstraintF>,

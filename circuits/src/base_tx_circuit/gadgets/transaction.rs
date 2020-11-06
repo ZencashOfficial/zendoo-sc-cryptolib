@@ -29,7 +29,6 @@ use std::{
     borrow::Borrow, marker::PhantomData,
 };
 
-#[derive(Clone)]
 pub struct CoinBoxGadget<
     ConstraintF: PrimeField,
     G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -43,6 +42,25 @@ pub struct CoinBoxGadget<
     pub custom_hash: HG::DataGadget,
     pub pk: FieldBasedSchnorrPkGadget<ConstraintF, G, GG>,
     pub proposition_hash: HG::DataGadget,
+}
+
+impl<ConstraintF, G, GG, H, HG> Clone for CoinBoxGadget<ConstraintF, G, GG, H, HG>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
+{
+    fn clone(&self) -> Self {
+        Self {
+            box_type: self.box_type.clone(),
+            amount: self.amount.clone(),
+            custom_hash: self.custom_hash.clone(),
+            pk: self.pk.clone(),
+            proposition_hash: self.proposition_hash.clone()
+        }
+    }
 }
 
 impl<ConstraintF, G, GG, H, HG> Eq for CoinBoxGadget<ConstraintF, G, GG, H, HG>
@@ -526,9 +544,9 @@ pub(crate) struct InputCoinBoxGadget<
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 >
 {
-    box_: NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>,
-    sig:  FieldBasedSchnorrSigGadget<ConstraintF, G>,
-    is_padding: Boolean,
+    pub(crate) box_: NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>,
+    pub(crate) sig:  FieldBasedSchnorrSigGadget<ConstraintF, G>,
+    pub(crate) is_padding: Boolean,
 }
 
 #[derive(Clone)]
@@ -540,8 +558,8 @@ pub(crate) struct OutputCoinBoxGadget<
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>
 >
 {
-    box_: CoinBoxGadget<ConstraintF, G, GG, H, HG>,
-    is_padding: Boolean,
+    pub(crate) box_: CoinBoxGadget<ConstraintF, G, GG, H, HG>,
+    pub(crate) is_padding: Boolean,
 }
 
 /// Gadget holding a BaseTransaction. A difference with respect to the primitive is a Boolean
