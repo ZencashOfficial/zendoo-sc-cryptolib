@@ -27,13 +27,13 @@ use crate::base_tx_circuit::{
         sc_utxo_tree::SCUtxoTreeGadget,
         transaction::{
             BaseTransactionGadget, NoncedCoinBoxGadget,
-        }
+        },
+        transition::MerkleTreeTransitionGadget,
+        bit_vector_tree::BitVectorTreeGadget,
     },
     constants::BaseTransactionParameters,
 };
 use std::marker::PhantomData;
-use crate::base_tx_circuit::gadgets::transition::MerkleTreeTransitionGadget;
-use crate::base_tx_circuit::gadgets::bit_vector_tree::BitVectorTreeGadget;
 
 /// Base proof of transition for a single payment transaction, able to contain more than on
 /// input/output coin box. The approach is to sequentially enforce one input/output transition
