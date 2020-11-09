@@ -775,7 +775,7 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
         )?;
 
         // H(output_data)
-        //TODO: Is this the correct way ? Or we simply take the hash of output.box_.to_field_gadget_elements() ?
+        //TODO: Is this the correct way ?
         let mut hash_outputs = Vec::new();
 
         self.outputs.iter().enumerate().map(

@@ -18,7 +18,7 @@ use r1cs_crypto::FieldBasedHashGadget;
 pub struct BitVectorTreeGadget<P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
-        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         ConstraintF: PrimeField,
 {
     _tree_params: PhantomData<P>,
@@ -29,20 +29,9 @@ pub struct BitVectorTreeGadget<P, HGadget, ConstraintF>
 impl<P, HGadget, ConstraintF> BitVectorTreeGadget<P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
-        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         ConstraintF: PrimeField,
 {
-    pub(crate) fn enforce_bv_leaf_update<CS: ConstraintSystem<ConstraintF>>(
-        cs: CS,
-        bv_leaf: &FpGadget<ConstraintF>,
-        bv_leaf_index: &FpGadget<ConstraintF>,
-        utxo_leaf_index: &FpGadget<ConstraintF>,
-        bv_tree_batch_size: &ConstraintF,
-    ) -> Result<FpGadget<ConstraintF>, SynthesisError>
-    {
-        Self::conditional_enforce_bv_leaf_update(cs, bv_leaf, bv_leaf_index, utxo_leaf_index, bv_tree_batch_size, &Boolean::Constant(true))
-    }
-
     /// PRE-REQUISITES:
     /// - `bv_leaf_index` is already enforced to the be the index of `bv_leaf`;
     /// - `utxo_leaf_index` is alreay enforced to be the index of the corresponding

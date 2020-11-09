@@ -1,12 +1,17 @@
-use algebra::fields::PrimeField;
+use algebra::fields::{
+    PrimeField, FpParameters
+};
 use primitives::merkle_tree::field_based_mht::FieldBasedMerkleTreeParameters;
 use r1cs_crypto::{
     crh::FieldBasedHashGadget,
     merkle_tree::field_based_mht::FieldBasedMerkleTreePathGadget,
 };
 use r1cs_std::{
-    bits::boolean::Boolean,
+    bits::{
+        boolean::Boolean, FromBitsGadget,
+    },
     select::CondSelectGadget,
+    fields::fp::FpGadget
 };
 use r1cs_core::{
     ConstraintSystem, SynthesisError
@@ -22,7 +27,7 @@ use std::marker::PhantomData;
 pub(crate) struct MerkleTreeTransitionGadget<P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
-        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         ConstraintF: PrimeField,
 {
     _tree_params: PhantomData<P>,
@@ -33,9 +38,38 @@ pub(crate) struct MerkleTreeTransitionGadget<P, HGadget, ConstraintF>
 impl<P, HGadget, ConstraintF> MerkleTreeTransitionGadget <P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
-        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         ConstraintF: PrimeField,
 {
+    /// Given a `leaf` of a Merkle Tree, enforce and return, given its `path` to the root,
+    /// a FpGadget representing the position of the leaf in the tree. In particular,
+    /// the first log2(num_leaves) bits of the leaves, in decimal, stands for the index
+    /// of the leaf, and the same holds for the bits of its Merkle Path to the root.
+    pub(crate) fn conditionally_enforce_leaf_index<CS: ConstraintSystem<ConstraintF>>(
+        mut cs: CS,
+        path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        leaf: &HGadget::DataGadget,
+        should_enforce: &Boolean
+    ) -> Result<FpGadget<ConstraintF>, SynthesisError>
+    {
+        let leaf_index_bits = leaf.to_bits_with_length_restriction(
+            cs.ns(|| "get leaf index bits"),
+            (ConstraintF::Params::MODULUS_BITS as usize) - path.length()
+        )?;
+
+        path.conditionally_enforce_leaf_index_bits(
+            cs.ns(|| "enforce leaf index bits"),
+            leaf_index_bits.as_slice(),
+            should_enforce
+        )?;
+
+        let leaf_index_g = FpGadget::<ConstraintF>::from_bits(
+            cs.ns(|| "pack leaf index bits into a field element"),
+            leaf_index_bits.as_slice()
+        )?;
+
+        Ok(leaf_index_g)
+    }
 
     /// We need to enforce transition from `start_root` to `dest_root` following the
     /// replacement of `start_leaf` with `new_start_leaf` (at the same position) and `dest_leaf`

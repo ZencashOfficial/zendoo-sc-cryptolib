@@ -337,7 +337,7 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
         let inputs_id_hash = digest.finalize();
 
         // H(outputs_data)
-        //TODO: Is this the correct way ? Or we simply take the hash of output.to_field_elements() ?
+        //TODO: Is this the correct way ?
         digest.reset(None);
 
         self.outputs.iter().enumerate().map(

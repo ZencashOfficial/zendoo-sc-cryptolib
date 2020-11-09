@@ -7,6 +7,7 @@ use r1cs_crypto::{
 use r1cs_std::{
     alloc::ConstantGadget,
     bits::boolean::Boolean,
+    fields::fp::FpGadget,
 };
 use r1cs_core::{
     ConstraintSystem, SynthesisError
@@ -17,7 +18,7 @@ use std::marker::PhantomData;
 pub struct SCUtxoTreeGadget<P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
-        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         ConstraintF: PrimeField,
 {
     _tree_params: PhantomData<P>,
@@ -28,7 +29,7 @@ pub struct SCUtxoTreeGadget<P, HGadget, ConstraintF>
 impl<P, HGadget, ConstraintF> SCUtxoTreeGadget<P, HGadget, ConstraintF>
     where
         P: FieldBasedMerkleTreeParameters<Data = ConstraintF>,
-        HGadget: FieldBasedHashGadget<P::H, ConstraintF>,
+        HGadget: FieldBasedHashGadget<P::H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         ConstraintF: PrimeField,
 {
     /// If `should_enforce` is True, enforces removal of `start_leaf` located at `start_path`,
