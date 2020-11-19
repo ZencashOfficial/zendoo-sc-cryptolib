@@ -1,4 +1,4 @@
-use algebra::{PrimeField, ToConstraintField, ProjectiveCurve};
+use algebra::{PrimeField, ToConstraintField, ProjectiveCurve, ToBytes, to_bytes, FromBytes};
 use primitives::FieldBasedHash;
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::{
@@ -21,7 +21,7 @@ use r1cs_crypto::{FieldBasedHashGadget, signature::schnorr::field_based_schnorr:
 }, FieldHasherGadget, FieldBasedSigGadget};
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::{
-        CoinBox, NoncedCoinBox, MAX_I_O_BOXES, BaseTransaction,
+        CoinBox, NoncedCoinBox, MAX_I_O_COIN_BOXES, BaseTransaction,
     },
     constants::BaseTransactionParameters,
 };
@@ -38,6 +38,8 @@ pub struct CoinBoxGadget<
 >
 {
     pub box_type: UInt8,
+    // For amount it will be useful to keep both bits and field representation
+    pub amount_bits: UInt64,
     pub amount: FpGadget<ConstraintF>,
     pub custom_hash: HG::DataGadget,
     pub pk: FieldBasedSchnorrPkGadget<ConstraintF, G, GG>,
@@ -55,6 +57,7 @@ impl<ConstraintF, G, GG, H, HG> Clone for CoinBoxGadget<ConstraintF, G, GG, H, H
     fn clone(&self) -> Self {
         Self {
             box_type: self.box_type.clone(),
+            amount_bits: self.amount_bits.clone(),
             amount: self.amount.clone(),
             custom_hash: self.custom_hash.clone(),
             pk: self.pk.clone(),
@@ -123,9 +126,18 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<CoinBox<ConstraintF, G>, ConstraintF
 
         let box_type = UInt8::alloc(&mut cs.ns(|| "alloc box_type"), || box_type)?;
 
-        let amount = FpGadget::<ConstraintF>::alloc(
+        let amount_bits = UInt64::alloc(
             &mut cs.ns(|| "alloc amount"),
-            || amount
+            amount.ok()
+        )?;
+
+        // TODO: Analyse if it's possible to pass as witness to the circuit directly
+        //       a field element corresponding to amount, or if there are security
+        //       problems if we don't enforce the actual packing of the amount bits into
+        //       a field element.
+        let amount = FpGadget::<ConstraintF>::from_bits(
+            cs.ns(|| "amount to field gadget"),
+            amount_bits.to_bits_le().as_slice()
         )?;
 
         let custom_hash = FpGadget::<ConstraintF>::alloc(
@@ -147,7 +159,7 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<CoinBox<ConstraintF, G>, ConstraintF
             || proposition_hash
         )?;
 
-        Ok( Self { box_type, amount, custom_hash, pk, proposition_hash } )
+        Ok( Self { box_type, amount_bits, amount, custom_hash, pk, proposition_hash } )
     }
 
     fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(_cs: CS, _f: F) -> Result<Self, SynthesisError> where
@@ -168,9 +180,11 @@ impl<ConstraintF, G, GG, H, HG> ConstantGadget<CoinBox<ConstraintF, G>, Constrai
     fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &CoinBox<ConstraintF, G>) -> Self {
         let box_type = UInt8::constant(value.box_type.clone().into());
 
+        let amount_bits = UInt64::constant(value.amount.clone());
+
         let amount = FpGadget::<ConstraintF>::from_value(
-            &mut cs.ns(|| "hardcode amount"),
-            &value.amount
+            &mut cs.ns(|| "hardcode amount as field gadget"),
+            &ConstraintF::read(to_bytes!(value.amount.clone()).unwrap().as_slice()).unwrap()
         );
 
         let custom_hash = FpGadget::<ConstraintF>::from_value(
@@ -188,13 +202,13 @@ impl<ConstraintF, G, GG, H, HG> ConstantGadget<CoinBox<ConstraintF, G>, Constrai
             &value.proposition_hash
         );
 
-        Self { box_type, amount, custom_hash, pk, proposition_hash }
+        Self { box_type, amount_bits, amount, custom_hash, pk, proposition_hash }
     }
 
     fn get_constant(&self) -> CoinBox<ConstraintF, G> {
         CoinBox::<ConstraintF, G> {
             box_type: self.box_type.get_value().unwrap().into(),
-            amount: self.amount.get_constant(),
+            amount: self.amount_bits.get_value().unwrap(),
             custom_hash: self.custom_hash.get_constant(),
             pk: self.pk.get_constant(),
             proposition_hash: self.proposition_hash.get_constant()
@@ -216,17 +230,18 @@ impl<ConstraintF, G, GG, H, HG> ToConstraintFieldGadget<ConstraintF> for CoinBox
         &self,
         mut cs: CS
     ) -> Result<Vec<FpGadget<ConstraintF>>, SynthesisError> {
-        // Let's pack box_type into a FpGadget
-        let box_type_g = {
-            let bits = self.box_type.into_bits_le();
+        // Let's pack box_type and amount into a FpGadget
+        let box_info_g = {
+            let mut bits = self.box_type.into_bits_le();
+            bits.extend_from_slice(self.amount_bits.to_bits_le().as_slice());
             FpGadget::<ConstraintF>::from_bits(
-                cs.ns(|| "construct box type"),
+                cs.ns(|| "construct box data"),
                 bits.as_slice()
             )
         }?;
 
         let pk_coords = self.pk.pk.to_field_gadget_elements(cs.ns(|| "pk to field gadget elements"))?;
-        let mut box_data = vec![box_type_g, self.amount.clone(), self.custom_hash.clone()];
+        let mut box_data = vec![box_info_g, self.custom_hash.clone()];
         box_data.extend_from_slice(pk_coords.as_slice());
         box_data.push(self.proposition_hash.clone());
         Ok(box_data)
@@ -349,9 +364,18 @@ impl<ConstraintF, G, GG, H, HG> AllocGadget<NoncedCoinBox<ConstraintF, G>, Const
             || box_data
         )?;
 
-        let nonce = FpGadget::<ConstraintF>::alloc(
+        let nonce_bits = UInt64::alloc(
             &mut cs.ns(|| "alloc nonce"),
-            || nonce
+            nonce.ok()
+        )?;
+
+        // TODO: Analyse if it's possible to pass as witness to the circuit directly
+        //       a field element corresponding to nonce, or if there are security
+        //       problems if we don't enforce the actual packing of the nonce bits into
+        //       a field element.
+        let nonce = FpGadget::<ConstraintF>::from_bits(
+            cs.ns(|| "nonce to field gadget"),
+            nonce_bits.to_bits_le().as_slice()
         )?;
 
         let id = FpGadget::<ConstraintF>::alloc(
@@ -387,8 +411,8 @@ impl<ConstraintF, G, GG, H, HG> ConstantGadget<NoncedCoinBox<ConstraintF, G>, Co
         );
 
         let nonce = FpGadget::<ConstraintF>::from_value(
-            &mut cs.ns(|| "hardcode nonce"),
-            &value.nonce.unwrap()
+            &mut cs.ns(|| "hardcode nonce as field gadget"),
+            &ConstraintF::read(to_bytes!(value.nonce.unwrap()).unwrap().as_slice()).unwrap()
         );
 
         let id = FpGadget::<ConstraintF>::from_value(
@@ -400,9 +424,12 @@ impl<ConstraintF, G, GG, H, HG> ConstantGadget<NoncedCoinBox<ConstraintF, G>, Co
     }
 
     fn get_constant(&self) -> NoncedCoinBox<ConstraintF, G> {
+
+        let nonce_bytes = to_bytes!(self.nonce.get_constant()).unwrap();
+
         NoncedCoinBox::<ConstraintF, G> {
             box_data: self.box_data.get_constant(),
-            nonce: Some(self.nonce.get_constant()),
+            nonce: Some(u64::read(&nonce_bytes[..8]).unwrap()),
             id: Some(self.id.get_constant())
         }
     }
@@ -459,7 +486,7 @@ impl<ConstraintF, G, GG, H, HG> NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
     }
 
     #[inline]
-    /// Enforce H(boxtype, value, custom_hash, pk, proposition_hash, nonce)
+    /// Enforce H(CoinBoxType, value, custom_hash, pk, proposition_hash, nonce)
     /// PREREQUISITES: Enforce correct nonce for `self` box.
     pub fn enforce_id_calculation<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -633,8 +660,8 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
             )
         };
 
-        let mut input_gs = Vec::with_capacity(MAX_I_O_BOXES);
-        let mut output_gs = Vec::with_capacity(MAX_I_O_BOXES);
+        let mut input_gs = Vec::with_capacity(MAX_I_O_COIN_BOXES);
+        let mut output_gs = Vec::with_capacity(MAX_I_O_COIN_BOXES);
 
         let padding_input_box_g = NoncedCoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
             cs.ns(|| "hardcode padding input box"),
@@ -646,7 +673,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
             &(P::PADDING_OUTPUT_BOX)
         );
 
-        // Alloc input and output boxes that must be exactly `MAX_I_O_BOXES`
+        // Alloc input and output boxes that must be exactly `MAX_I_O_COIN_BOXES`
         inputs?.into_iter().enumerate().map(|(i, input)| {
 
             let input_sig_g = FieldBasedSchnorrSigGadget::<ConstraintF, G>::alloc(
@@ -673,7 +700,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
             Ok(())
         }).collect::<Result<(), SynthesisError>>()?;
 
-        assert_eq!(input_gs.len(), MAX_I_O_BOXES);
+        assert_eq!(input_gs.len(), MAX_I_O_COIN_BOXES);
 
         outputs?.into_iter().enumerate().map(|(i, output)|{
             let output_g = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
@@ -694,10 +721,16 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
             Ok(())
         }).collect::<Result<(), SynthesisError>>()?;
 
-        assert_eq!(output_gs.len(), MAX_I_O_BOXES);
+        assert_eq!(output_gs.len(), MAX_I_O_COIN_BOXES);
 
-        // Alloc fee
-        let fee = FpGadget::<ConstraintF>::alloc(cs.ns(|| "alloc fee"), || fee)?;
+        // Alloc fee by first allocating the u64 bits and then safely packing them into a field element
+        let fee = {
+            let fee_bits = UInt64::alloc(cs.ns(|| "alloc fee bits"), fee.ok())?;
+            FpGadget::<ConstraintF>::from_bits(
+                cs.ns(|| "pack fee into a field element"),
+                fee_bits.to_bits_le().as_slice()
+            )
+        }?;
 
         // Alloc timestamp by first allocating the u64 bits and then safely packing them into a field element
         let timestamp = {
@@ -752,9 +785,6 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         P: BaseTransactionParameters<ConstraintF, G>,
 {
-    /// PREREQUISITES: Enforce correct input ids
-    /// TODO: Instead of enforcing input ids, should we enforce only output ids and assume
-    ///       input ids are correct (Like we do for nonces) ? Probably yes
     pub fn enforce_tx_hash_without_nonces<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,

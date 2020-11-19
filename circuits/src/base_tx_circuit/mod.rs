@@ -21,7 +21,7 @@ use r1cs_crypto::{
 };
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::{
-        BaseTransaction, MAX_I_O_BOXES
+        BaseTransaction, MAX_I_O_COIN_BOXES
     },
     gadgets::{
         sc_utxo_tree::SCUtxoTreeGadget,
@@ -50,7 +50,7 @@ pub struct BaseTransactionCircuit<
 {
     /////////////////////////// Witnesses
 
-    /// A transaction with `MAX_I_O_BOXES` coin box inputs and `MAX_I_O_BOXES` coin box outputs
+    /// A transaction with `MAX_I_O_COIN_BOXES` coin box inputs and `MAX_I_O_COIN_BOXES` coin box outputs
     tx_pay:                   Option<BaseTransaction<ConstraintF, G, H, TXP>>,
 
     /// Merkle Paths to the leaf where `tx_pay` will be placed in the Applied Payment Transactions Merkle Tree
@@ -122,13 +122,13 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
     fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(self, cs: &mut CS) -> Result<(), SynthesisError>
     {
         // Preliminary checks
-        assert_eq!(self.mst_paths_to_inputs.len(), MAX_I_O_BOXES);
+        assert_eq!(self.mst_paths_to_inputs.len(), MAX_I_O_COIN_BOXES);
         assert_eq!(self.mst_paths_to_inputs.len(), self.mst_paths_to_outputs.len());
 
-        assert_eq!(self.bvt_paths_to_inputs.len(), MAX_I_O_BOXES);
+        assert_eq!(self.bvt_paths_to_inputs.len(), MAX_I_O_COIN_BOXES);
         assert_eq!(self.bvt_paths_to_inputs.len(), self.bvt_paths_to_outputs.len());
 
-        assert_eq!(self.prev_bvt_input_leaves.len(), MAX_I_O_BOXES);
+        assert_eq!(self.prev_bvt_input_leaves.len(), MAX_I_O_COIN_BOXES);
         assert_eq!(self.prev_bvt_input_leaves.len(), self.prev_bvt_output_leaves.len());
 
         // Alloc tx_pay
@@ -137,7 +137,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
             || self.tx_pay.as_ref().ok_or(SynthesisError::AssignmentMissing)
         )?;
 
-        debug_assert!(tx_pay_g.inputs.len() == MAX_I_O_BOXES);
+        debug_assert!(tx_pay_g.inputs.len() == MAX_I_O_COIN_BOXES);
         debug_assert!(tx_pay_g.inputs.len() == tx_pay_g.outputs.len());
 
         // We need to enforce there is at least one input box
@@ -190,7 +190,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
         let mut curr_mst_root_g = prev_mst_root_g;
         let mut curr_bvt_root_g = prev_bvt_root_g;
 
-        for i in 0..MAX_I_O_BOXES {
+        for i in 0..MAX_I_O_COIN_BOXES {
 
             let is_input_i_padding = tx_pay_g.inputs[i].is_padding;
             let is_output_i_padding = tx_pay_g.outputs[i].is_padding;
