@@ -21,12 +21,12 @@ use r1cs_crypto::{
 };
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::{
-        BaseTransaction, MAX_I_O_COIN_BOXES
+        CoreTransaction, MAX_I_O_COIN_BOXES
     },
     gadgets::{
         sc_utxo_tree::SCUtxoTreeGadget,
         transaction::{
-            BaseTransactionGadget, NoncedCoinBoxGadget,
+            CoreTransactionGadget, NoncedCoinBoxGadget,
         },
         transition::MerkleTreeTransitionGadget,
         bit_vector_tree::BitVectorTreeGadget,
@@ -51,7 +51,7 @@ pub struct BaseTransactionCircuit<
     /////////////////////////// Witnesses
 
     /// A transaction with `MAX_I_O_COIN_BOXES` coin box inputs and `MAX_I_O_COIN_BOXES` coin box outputs
-    tx_pay:                   Option<BaseTransaction<ConstraintF, G, H, TXP>>,
+    tx_pay:                   Option<CoreTransaction<ConstraintF, G, H, TXP>>,
 
     /// Merkle Paths to the leaf where `tx_pay` will be placed in the Applied Payment Transactions Merkle Tree
     txs_tree_tx_path:         Option<FieldBasedBinaryMHTPath<MHTP>>,
@@ -132,7 +132,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
         assert_eq!(self.prev_bvt_input_leaves.len(), self.prev_bvt_output_leaves.len());
 
         // Alloc tx_pay
-        let tx_pay_g = BaseTransactionGadget::<ConstraintF, G, GG, H, HG, TXP>::alloc(
+        let tx_pay_g = CoreTransactionGadget::<ConstraintF, G, GG, H, HG, TXP>::alloc(
             cs.ns(|| "alloc tx_pay"),
             || self.tx_pay.as_ref().ok_or(SynthesisError::AssignmentMissing)
         )?;
@@ -365,10 +365,11 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
 
         fee_g.enforce_equal(cs.ns(|| "public input fee == tx_pay.fee"), &tx_pay_g.fee)?;
 
-        tx_pay_g.verify(
+        tx_pay_g.conditionally_verify(
             cs.ns(|| "check tx_pay correctness"),
             // message_to_sign and tx_hash_without_nonces are the same for now
-            message_to_sign_g.clone()
+            message_to_sign_g.clone(),
+            &Boolean::constant(true)
         )?;
 
         // 4. Check correct update of Applied Payment Transactions Merkle Tree

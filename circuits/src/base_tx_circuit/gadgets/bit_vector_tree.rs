@@ -50,10 +50,11 @@ impl<P, HGadget, ConstraintF> BitVectorTreeGadget<P, HGadget, ConstraintF>
     {
         // bv_leaf_index = utxo_leaf_index / bv_tree_batch_size
         // bit_idx_inside_bv_leaf = utxo_leaf_index % bv_tree_batch_size
-        //                        = bv_leaf_index * bv_tree_batch_size - utxo_leaf_index
+        //                        = utxo_leaf_index - bv_leaf_index * bv_tree_batch_size
         let bit_idx_inside_bv_leaf = bv_leaf_index
             .mul_by_constant(cs.ns(|| "bv_leaf_index * bv_tree_batch_size"), bv_tree_batch_size)?
-            .sub(cs.ns(|| "bv_leaf_index * bv_tree_batch_size - utxo_leaf_index"), utxo_leaf_index)?;
+            .negate(cs.ns(|| "- bv_leaf_index * bv_tree_batch_size"))?
+            .add(cs.ns(|| " utxo_leaf_index - bv_leaf_index * bv_tree_batch_size"), utxo_leaf_index)?;
 
         let new_bv_leaf = {
 

@@ -232,7 +232,7 @@ pub const MAX_I_O_COIN_BOXES: usize = 2;
 /// Internally, for Snark friendliness purposes, we will always consider `MAX_I_O_COIN_BOXES`,
 /// by adding to `inputs`, `num_inputs` default boxes and to `outputs`, `num_outputs`
 /// default boxes.
-pub struct BaseTransaction<
+pub struct CoreTransaction<
     F: PrimeField,
     G: ProjectiveCurve + ToConstraintField<F>,
     H: FieldBasedHash<Data = F>,
@@ -257,7 +257,7 @@ pub struct BaseTransaction<
     _hash: PhantomData<H>,
 }
 
-impl<F, G, H, P> BaseTransaction<F, G, H, P>
+impl<F, G, H, P> CoreTransaction<F, G, H, P>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
@@ -418,7 +418,7 @@ impl<F, G, H, P> BaseTransaction<F, G, H, P>
     }
 }
 
-impl<F, G, H, P> FieldHasher<F, H> for BaseTransaction<F, G, H, P>
+impl<F, G, H, P> FieldHasher<F, H> for CoreTransaction<F, G, H, P>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
@@ -454,7 +454,7 @@ impl<F, G, H, P> FieldHasher<F, H> for BaseTransaction<F, G, H, P>
     }
 }
 
-impl<F, G, H, P> SemanticallyValid for BaseTransaction<F, G, H, P>
+impl<F, G, H, P> SemanticallyValid for CoreTransaction<F, G, H, P>
     where
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,

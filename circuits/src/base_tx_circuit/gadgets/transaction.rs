@@ -21,7 +21,7 @@ use r1cs_crypto::{FieldBasedHashGadget, signature::schnorr::field_based_schnorr:
 }, FieldHasherGadget, FieldBasedSigGadget};
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::{
-        CoinBox, NoncedCoinBox, MAX_I_O_COIN_BOXES, BaseTransaction,
+        CoinBox, NoncedCoinBox, MAX_I_O_COIN_BOXES, CoreTransaction,
     },
     constants::BaseTransactionParameters,
 };
@@ -589,9 +589,9 @@ pub(crate) struct OutputCoinBoxGadget<
     pub(crate) is_padding: Boolean,
 }
 
-/// Gadget holding a BaseTransaction. A difference with respect to the primitive is a Boolean
+/// Gadget holding a CoreTransaction. A difference with respect to the primitive is a Boolean
 /// coupled with each box, enforced to indicate if that box is a padding box or not.
-pub struct BaseTransactionGadget<
+pub struct CoreTransactionGadget<
     ConstraintF: PrimeField,
     G: ProjectiveCurve + ToConstraintField<ConstraintF>,
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
@@ -615,8 +615,8 @@ pub struct BaseTransactionGadget<
     _parameters: PhantomData<P>,
 }
 
-impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H, P>, ConstraintF>
-    for BaseTransactionGadget<ConstraintF, G, GG, H, HG, P>
+impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H, P>, ConstraintF>
+    for CoreTransactionGadget<ConstraintF, G, GG, H, HG, P>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -629,7 +629,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
     /// it's a padding box or not.
     fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError> where
         F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<BaseTransaction<ConstraintF, G, H, P>>
+        T: Borrow<CoreTransaction<ConstraintF, G, H, P>>
     {
         let (
             inputs, outputs,
@@ -771,12 +771,12 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<BaseTransaction<ConstraintF, G, H
 
     fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(_cs: CS, _f: F) -> Result<Self, SynthesisError> where
         F: FnOnce() -> Result<T, SynthesisError>,
-        T: Borrow<BaseTransaction<ConstraintF, G, H, P>> {
+        T: Borrow<CoreTransaction<ConstraintF, G, H, P>> {
         unimplemented!()
     }
 }
 
-impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, HG, P>
+impl<ConstraintF, G, GG, H, HG, P> CoreTransactionGadget<ConstraintF, G, GG, H, HG, P>
     where
         ConstraintF: PrimeField,
         G: ProjectiveCurve + ToConstraintField<ConstraintF>,
@@ -850,10 +850,11 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
     /// 2) inputs_amount - outputs_amount - fee == 0
     /// Will ignore the padding boxes.
     /// PREREQUISITES: `message_to_sign` already enforced
-    pub fn verify<CS: ConstraintSystem<ConstraintF>>(
+    pub fn conditionally_verify<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
-        message_to_sign: FpGadget<ConstraintF>
+        message_to_sign: FpGadget<ConstraintF>,
+        should_enforce: &Boolean,
     ) -> Result<(), SynthesisError>
     {
         let mut inputs_sum = FpGadget::<ConstraintF>::zero(cs.ns(|| "initialize inputs_sum"))?;
@@ -862,19 +863,25 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
 
         self.inputs.iter().enumerate().map(
             |(index, input)| {
+                let should_enforce_input = Boolean::and(
+                    cs.ns(|| format!("should_enforce_input_sig_{}", index)),
+                    should_enforce,
+                    &input.is_padding.not()
+                )?;
+
                 FieldBasedSchnorrSigVerificationGadget::<ConstraintF, G, GG, H, HG>::conditionally_enforce_signature_verification(
                     cs.ns(|| format!("verify_sig_for_input_{}", index)),
                     &input.box_.box_data.pk,
                     &input.sig,
                     &[message_to_sign.clone()],
-                    &input.is_padding.not(),
+                    &should_enforce_input,
                 )?;
 
                 let to_add = FpGadget::<ConstraintF>::conditionally_select(
                     cs.ns(|| format!("add_input_amount_or_0_{}", index)),
-                    &input.is_padding,
-                    &zero,
+                    &should_enforce_input,
                     &input.box_.box_data.amount,
+                    &zero,
                 )?;
 
                 inputs_sum = inputs_sum.add(
@@ -887,12 +894,19 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
 
         self.outputs.iter().enumerate().map(
             |(index, output)| {
+                let should_enforce_output = Boolean::and(
+                    cs.ns(|| format!("should_enforce_output_amount_{}", index)),
+                    should_enforce,
+                    &output.is_padding.not()
+                )?;
+
                 let to_add = FpGadget::<ConstraintF>::conditionally_select(
                     cs.ns(|| format!("add_output_amount_or_0_{}", index)),
-                    &output.is_padding,
-                    &zero,
+                    &should_enforce_output,
                     &output.box_.amount,
+                    &zero,
                 )?;
+
                 outputs_sum = outputs_sum.add(
                     cs.ns(|| format!("add_output_value_{}", index)),
                     &to_add
@@ -904,7 +918,11 @@ impl<ConstraintF, G, GG, H, HG, P> BaseTransactionGadget<ConstraintF, G, GG, H, 
         inputs_sum
             .sub(cs.ns(|| "inputs - outputs"), &outputs_sum)?
             .sub(cs.ns(|| "inputs - outputs - fee"), &self.fee)?
-            .enforce_equal(cs.ns(|| "inputs - outputs - fee == 0"), &zero)?;
+            .conditional_enforce_equal(
+                cs.ns(|| "inputs - outputs - fee == 0"),
+                &zero,
+                should_enforce
+            )?;
 
         Ok(())
     }
