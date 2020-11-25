@@ -33,7 +33,7 @@ pub struct CoreTxInTreeRuleProverData<
 >
 {
     /// Merkle Path to the leaf where tx will be placed in the Applied Payment Transactions Merkle Tree
-    pub(crate) txs_tree_tx_path:         Option<FieldBasedBinaryMHTPath<MHTP>>,
+    pub(crate) txs_tree_tx_path:         FieldBasedBinaryMHTPath<MHTP>,
 
     /// Applied Payment Transactions Merkle Tree Root before applying tx
     pub(crate) prev_txs_tree_root:       Option<MHTP::Data>,
@@ -49,7 +49,7 @@ where
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     pub fn new(
-        path: Option<FieldBasedBinaryMHTPath<MHTP>>,
+        path:         FieldBasedBinaryMHTPath<MHTP>,
         prev_tx_root: Option<ConstraintF>,
         next_tx_root: Option<ConstraintF>
     ) -> Self {
@@ -115,7 +115,7 @@ where
         // Alloc `txs_tree_tx_path`
         let txs_tree_tx_path_g = <Self as TxInTreeRule<ConstraintF, H, HG, MHTP>>::MerklePathGadget::alloc(
             cs.ns(|| "alloc txs_tree_tx_path"),
-            || prover_data.txs_tree_tx_path.as_ref().ok_or(SynthesisError::AssignmentMissing)
+            || Ok(&prover_data.txs_tree_tx_path)
         )?;
 
         // Alloc Applyied Payment Transaction Tree roots

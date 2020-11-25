@@ -36,10 +36,10 @@ pub struct CoreTxMerkleTreeStateTransitionRuleProverData<
 >
 {
     /// Merkle Paths to the leaves where the inputs are placed in the Merkle State Tree
-    pub(crate) mst_paths_to_inputs:      Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+    pub(crate) mst_paths_to_inputs:      Vec<FieldBasedBinaryMHTPath<MHTP>>,
 
     /// Merkle Paths to the leaves where the outputs are placed in the Merkle State Tree
-    pub(crate) mst_paths_to_outputs:     Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+    pub(crate) mst_paths_to_outputs:     Vec<FieldBasedBinaryMHTPath<MHTP>>,
 
     /// Merkle State Tree Root before applying `tx_pay`
     pub(crate) prev_mst_root:            Option<MHTP::Data>,
@@ -54,9 +54,9 @@ impl<ConstraintF, H, MHTP> CoreTxMerkleTreeStateTransitionRuleProverData<Constra
         H: FieldBasedHash<Data = ConstraintF>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>
 {
-    fn new(
-        paths_to_inputs:    Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
-        paths_to_outputs:   Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+    pub fn new(
+        paths_to_inputs:    Vec<FieldBasedBinaryMHTPath<MHTP>>,
+        paths_to_outputs:   Vec<FieldBasedBinaryMHTPath<MHTP>>,
         prev_root:          Option<H::Data>,
         next_root:          Option<H::Data>
     ) -> Self {
@@ -163,12 +163,12 @@ where
             // Alloc merkle paths
             let mst_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc mst_path_to_input_{}", i)),
-                || prover_data.mst_paths_to_inputs[i].as_ref().ok_or(SynthesisError::AssignmentMissing)
+                || Ok(&prover_data.mst_paths_to_inputs[i])
             )?;
 
             let mst_path_to_output_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc mst_path_to_output_{}", i)),
-                || prover_data.mst_paths_to_outputs[i].as_ref().ok_or(SynthesisError::AssignmentMissing)
+                || Ok(&prover_data.mst_paths_to_outputs[i])
             )?;
 
             // Get output box leaf
@@ -260,12 +260,6 @@ where
         should_enforce: &Boolean,
     ) -> Result<(), SynthesisError> {
 
-        // We need to enforce there is at least one input box
-        tx_gadget.inputs[0].is_padding.enforce_equal(
-            cs.ns(|| "at least one input box"),
-            &Boolean::constant(false)
-        )?;
-
         let mut curr_mst_root_g = prev_root;
         for i in 0..MAX_I_O_COIN_BOXES {
 
@@ -323,13 +317,13 @@ pub struct CoreTxBVTStateTransitionRuleProverData<
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>
 > {
     /// Merkle Paths to the leaves where the inputs are placed in the Bit Vector Tree
-    bvt_paths_to_inputs:              Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+    bvt_paths_to_inputs:              Vec<FieldBasedBinaryMHTPath<MHTP>>,
 
     /// Leaves corresponding to the Merkle paths in `bvt_paths_to_inputs`
     prev_bvt_input_leaves:            Vec<Option<MHTP::Data>>,
 
     /// Merkle Paths to the leaves where the outputs are placed in the Merkle State Tree
-    bvt_paths_to_outputs:             Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+    bvt_paths_to_outputs:             Vec<FieldBasedBinaryMHTPath<MHTP>>,
 
     /// Leaves corresponding to the Merkle paths in `bvt_paths_to_outputs`
     prev_bvt_output_leaves:           Vec<Option<MHTP::Data>>,
@@ -347,10 +341,10 @@ impl<ConstraintF, H, MHTP> CoreTxBVTStateTransitionRuleProverData<ConstraintF, H
         H: FieldBasedHash<Data = ConstraintF>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>
 {
-    fn new(
-        bvt_paths_to_inputs:              Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+    pub fn new(
+        bvt_paths_to_inputs:              Vec<FieldBasedBinaryMHTPath<MHTP>>,
         prev_bvt_input_leaves:            Vec<Option<MHTP::Data>>, //This can be a vector of LeafUpdateRuleProverData ?
-        bvt_paths_to_outputs:             Vec<Option<FieldBasedBinaryMHTPath<MHTP>>>,
+        bvt_paths_to_outputs:             Vec<FieldBasedBinaryMHTPath<MHTP>>,
         prev_bvt_output_leaves:           Vec<Option<MHTP::Data>>, //This can be a vector of LeafUpdateRuleProverData ?
         prev_bvt_root:                    Option<MHTP::Data>,
         new_bvt_root:                     Option<MHTP::Data>,
@@ -377,7 +371,7 @@ pub struct CoreTxBVTStateTransitionRule<
     mst_rule:                   CoreTxMerkleTreeStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>,
     prev_bvt_input_leaves_g:    Vec<FpGadget<ConstraintF>>, //This can be a vector of LeafUpdateRule ?
     prev_bvt_output_leaves_g:   Vec<FpGadget<ConstraintF>>, //This can be a vector of LeafUpdateRule ?
-    bv_tree_batch_size:         ConstraintF,
+    bv_tree_batch_size:         usize,
 }
 
 impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
@@ -394,7 +388,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
         mst_rule:                   CoreTxMerkleTreeStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>,
         prev_bvt_input_leaves_g:    Vec<FpGadget<ConstraintF>>,
         prev_bvt_output_leaves_g:   Vec<FpGadget<ConstraintF>>,
-        bv_tree_batch_size:         ConstraintF,
+        bv_tree_batch_size:         usize,
     ) -> Self
     {
         Self {
@@ -408,7 +402,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
         prover_data:        CoreTxBVTStateTransitionRuleProverData<ConstraintF, H, MHTP>,
         tx_gadget:          &<Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::TransactionGadget,
         should_enforce:     &Boolean,
-        bv_tree_batch_size: ConstraintF,
+        bv_tree_batch_size: usize,
     ) -> Result<Self, SynthesisError>
     {
         // Alloc BVT roots
@@ -432,13 +426,13 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
             // Alloc merkle paths
             let bvt_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc bvt_path_to_input_{}", i)),
-                || prover_data.bvt_paths_to_inputs[i].as_ref().ok_or(SynthesisError::AssignmentMissing)
+                || Ok(&prover_data.bvt_paths_to_inputs[i])
             )?;
             bvt_path_to_input_gs.push(bvt_path_to_input_i_g);
 
             let bvt_path_to_output_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc bvt_path_to_output_{}", i)),
-                || prover_data.bvt_paths_to_outputs[i].as_ref().ok_or(SynthesisError::AssignmentMissing)
+                || Ok(&prover_data.bvt_paths_to_outputs[i])
             )?;
             bvt_path_to_output_gs.push(bvt_path_to_output_i_g);
 
@@ -543,7 +537,7 @@ CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
                 &self.prev_bvt_input_leaves_g[i],
                 &bvt_input_leaf_i_index_g,
                 &self.mst_rule.input_leaves_index_g[i],
-                &self.bv_tree_batch_size,
+                self.bv_tree_batch_size,
                 &should_enforce_input_i
             )?;
 
@@ -552,7 +546,7 @@ CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
                 &self.prev_bvt_output_leaves_g[i],
                 &bvt_output_leaf_i_index_g,
                 &self.mst_rule.output_leaves_index_g[i],
-                &self.bv_tree_batch_size,
+                self.bv_tree_batch_size,
                 &should_enforce_output_i
             )?;
 

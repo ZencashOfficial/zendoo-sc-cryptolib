@@ -6,7 +6,9 @@ use r1cs_std::{
     fields::{
         fp::FpGadget, FieldGadget,
     },
-    bits::boolean::Boolean,
+    bits::{
+        boolean::Boolean, FromBitsGadget,
+    },
     select::CondSelectGadget,
 };
 use r1cs_core::{
@@ -44,32 +46,35 @@ impl<P, HGadget, ConstraintF> BitVectorTreeGadget<P, HGadget, ConstraintF>
         bv_leaf: &FpGadget<ConstraintF>,
         bv_leaf_index: &FpGadget<ConstraintF>,
         utxo_leaf_index: &FpGadget<ConstraintF>,
-        bv_tree_batch_size: &ConstraintF,
+        bv_tree_batch_size: usize,
         should_enforce: &Boolean,
     ) -> Result<FpGadget<ConstraintF>, SynthesisError>
     {
+        // The bit length of the leaves of the BVT is bv_tree_batch_size
+        let to_skip = (ConstraintF::Params::MODULUS_BITS as usize) - bv_tree_batch_size;
+
         // bv_leaf_index = utxo_leaf_index / bv_tree_batch_size
         // bit_idx_inside_bv_leaf = utxo_leaf_index % bv_tree_batch_size
         //                        = utxo_leaf_index - bv_leaf_index * bv_tree_batch_size
-        let bit_idx_inside_bv_leaf = bv_leaf_index
-            .mul_by_constant(cs.ns(|| "bv_leaf_index * bv_tree_batch_size"), bv_tree_batch_size)?
-            .negate(cs.ns(|| "- bv_leaf_index * bv_tree_batch_size"))?
-            .add(cs.ns(|| " utxo_leaf_index - bv_leaf_index * bv_tree_batch_size"), utxo_leaf_index)?;
+        let bit_idx_inside_bv_leaf = {
+            let bv_tree_batch_size = ConstraintF::from(bv_tree_batch_size as u32);
+            bv_leaf_index
+                .mul_by_constant(cs.ns(|| "bv_leaf_index * bv_tree_batch_size"), &bv_tree_batch_size)?
+                .negate(cs.ns(|| "- bv_leaf_index * bv_tree_batch_size"))?
+                .add(cs.ns(|| " utxo_leaf_index - bv_leaf_index * bv_tree_batch_size"), utxo_leaf_index)
+        }?;
 
-        let new_bv_leaf = {
-
-            // bit_idx_inside_bv_leaf will not be bigger than log2(CAPACITY) = log2(MODULUS_BITS - 1)
+        // enforce 1 << bit_idx_inside_bv_leaf
+        let bitmask = {
+            // bit_idx_inside_bv_leaf will not be bigger than log2(bv_tree_batch_size)
             // so we can save some constraints by skipping unset bits
-            let to_skip = (ConstraintF::Params::MODULUS_BITS as usize) -
-                ((ConstraintF::Params::CAPACITY as f64).log2() as usize);
-
             let bit_idx_inside_bv_leaf_bits = bit_idx_inside_bv_leaf
                 .to_bits_with_length_restriction(
                     cs.ns(|| "bit_idx_inside_bv_leaf_to_bits"),
-                    to_skip
+                    (ConstraintF::Params::MODULUS_BITS as usize) - ((bv_tree_batch_size as f64).log2() as usize)
                 )?;
 
-            // new_bv_leaf = bv_leaf + 2^bit_idx_inside_bv_leaf
+            // 2^bit_idx_inside_bv_leaf
             let two = FpGadget::<ConstraintF>::one(cs.ns(|| "alloc one"))?
                 .double(cs.ns(|| "two"))?;
             let two_pow_bit_idx_inside_bv_leaf = two.pow(
@@ -77,8 +82,31 @@ impl<P, HGadget, ConstraintF> BitVectorTreeGadget<P, HGadget, ConstraintF>
                 bit_idx_inside_bv_leaf_bits.as_slice()
             )?;
 
-            bv_leaf.add(cs.ns(|| "bv_leaf + 2^bit_idx_inside_bv_leaf"), &two_pow_bit_idx_inside_bv_leaf)
+            two_pow_bit_idx_inside_bv_leaf.to_bits_with_length_restriction(
+                cs.ns(|| "get bitmask"),
+                to_skip
+            )
         }?;
+
+        let old_bv_leaf_bits = bv_leaf.to_bits_with_length_restriction(
+            cs.ns(|| "bv_leaf to bits"),
+            to_skip
+        )?;
+
+        debug_assert!(bitmask.len() == old_bv_leaf_bits.len());
+
+        // new_bv_leaf = old_bv_leaf_bits || 1 << bit_idx_inside_bv_leaf_bits
+        let new_bv_leaf_bits = old_bv_leaf_bits
+            .iter()
+            .zip(bitmask.iter())
+            .enumerate()
+            .map(|(i, (a, b))| Boolean::or(cs.ns(|| format!("or of bit_gadget {}", i)), a, b))
+            .collect::<Result<Vec<Boolean>, _>>()?;
+
+        let new_bv_leaf = FpGadget::<ConstraintF>::from_bits(
+            cs.ns(|| "pack new_bv_leaf_bits into a field element"),
+            new_bv_leaf_bits.as_slice()
+        )?;
 
         FpGadget::<ConstraintF>::conditionally_select(
             cs.ns(|| "select bv_leaf or new_bv_leaf"),
@@ -88,4 +116,3 @@ impl<P, HGadget, ConstraintF> BitVectorTreeGadget<P, HGadget, ConstraintF>
         )
     }
 }
-

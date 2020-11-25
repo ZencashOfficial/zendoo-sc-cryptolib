@@ -42,7 +42,7 @@ impl<ConstraintF, G, GG, H, HG, MHTP, TXP> CoreTxSignatureRule<ConstraintF, G, G
         TXP: BaseTransactionParameters<ConstraintF, G>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
-    pub fn new<CS: ConstraintSystem<ConstraintF>>(
+    pub fn new(
         message_to_sign_g: FpGadget<ConstraintF>
     ) -> Self
     {

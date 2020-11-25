@@ -48,9 +48,15 @@ impl<F: PrimeField> ToConstraintField<F> for CoinBoxType {
     }
 }
 
+impl Default for CoinBoxType {
+    fn default() -> Self {
+        CoinBoxType::CustomBox
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct CoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub box_type: CoinBoxType,
     pub amount: u64,
@@ -136,7 +142,7 @@ impl<F, G> ToConstraintField<F> for CoinBox<F, G>
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct NoncedCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>>{
     pub box_data: CoinBox<F, G>,
     pub nonce: Option<u64>,
@@ -218,7 +224,7 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> SemanticallyValid
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct InputCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub(crate) box_: NoncedCoinBox<F, G>,
     pub(crate) sig: FieldBasedSchnorrSignature<F, G>
@@ -478,5 +484,30 @@ impl<F, G, H, P> SemanticallyValid for CoreTransaction<F, G, H, P>
         is_valid &= self.verify_tx().unwrap_or(false);
 
         is_valid
+    }
+}
+
+impl<F, G, H, P> Default for CoreTransaction<F, G, H, P>
+    where
+        F: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<F>,
+        H: FieldBasedHash<Data = F>,
+        P: BaseTransactionParameters<F, G>
+{
+    fn default() -> Self {
+        Self {
+            inputs: vec![InputCoinBox::<F, G>::default(); MAX_I_O_COIN_BOXES],
+            num_inputs: 2,
+            outputs: vec![OutputCoinBox::<F, G>::default(); MAX_I_O_COIN_BOXES],
+            num_outputs: 2,
+            fee: 0,
+            timestamp: 0,
+            custom_fields_hash: F::default(),
+            non_coin_boxes_input_ids_cumulative_hash: F::default(),
+            non_coin_boxes_output_data_cumulative_hash: F::default(),
+            non_coin_boxes_input_proofs_cumulative_hash: F::default(),
+            _parameters: PhantomData,
+            _hash: PhantomData
+        }
     }
 }
