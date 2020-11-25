@@ -2,7 +2,7 @@ use algebra::fields::PrimeField;
 use primitives::merkle_tree::field_based_mht::FieldBasedMerkleTreeParameters;
 use r1cs_crypto::{
     crh::FieldBasedHashGadget,
-    merkle_tree::field_based_mht::FieldBasedMerkleTreePathGadget,
+    merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget,
 };
 use r1cs_std::{
     alloc::ConstantGadget,
@@ -39,9 +39,9 @@ impl<P, HGadget, ConstraintF> SCUtxoTreeGadget<P, HGadget, ConstraintF>
     pub fn conditionally_enforce_state_transition<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         start_root: &HGadget::DataGadget,
-        start_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        start_path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         start_leaf: &HGadget::DataGadget,
-        dest_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        dest_path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         new_dest_leaf: &HGadget::DataGadget,
         should_enforce: &Boolean,
     ) -> Result<HGadget::DataGadget, SynthesisError>
@@ -63,7 +63,7 @@ impl<P, HGadget, ConstraintF> SCUtxoTreeGadget<P, HGadget, ConstraintF>
     pub fn conditionally_enforce_leaf_removal<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         root: &HGadget::DataGadget,
-        path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         leaf: &HGadget::DataGadget,
         should_enforce: &Boolean,
     ) -> Result<HGadget::DataGadget, SynthesisError>
@@ -84,7 +84,7 @@ impl<P, HGadget, ConstraintF> SCUtxoTreeGadget<P, HGadget, ConstraintF>
     pub fn conditionally_enforce_leaf_insertion<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         root: &HGadget::DataGadget,
-        path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         new_leaf: &HGadget::DataGadget,
         should_enforce: &Boolean,
     ) -> Result<HGadget::DataGadget, SynthesisError>

@@ -27,6 +27,6 @@ pub trait CoinTransactionCircuit<
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >: TransactionCircuit<ConstraintF, H, HG, MHTP>
 {
-    type StateUpdateRule:   TxTreeStateTransitionRule<ConstraintF, H, MHTP>;
-    type BVTUpdateRule:     TxTreeStateTransitionRule<ConstraintF, H, MHTP>;
+    type StateUpdateRule:   TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>;
+    type BVTUpdateRule:     TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>;
 }

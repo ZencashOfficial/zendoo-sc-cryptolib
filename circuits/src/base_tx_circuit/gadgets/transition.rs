@@ -4,7 +4,10 @@ use algebra::fields::{
 use primitives::merkle_tree::field_based_mht::FieldBasedMerkleTreeParameters;
 use r1cs_crypto::{
     crh::FieldBasedHashGadget,
-    merkle_tree::field_based_mht::FieldBasedMerkleTreePathGadget,
+    merkle_tree::{
+        FieldBasedMerkleTreePathGadget,
+        field_based_mht::FieldBasedBinaryMerkleTreePathGadget
+    },
 };
 use r1cs_std::{
     bits::{
@@ -47,7 +50,7 @@ impl<P, HGadget, ConstraintF> MerkleTreeTransitionGadget <P, HGadget, Constraint
     /// of the leaf, and the same holds for the bits of its Merkle Path to the root.
     pub(crate) fn conditionally_enforce_leaf_index<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
-        path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         leaf: &HGadget::DataGadget,
         should_enforce: &Boolean
     ) -> Result<FpGadget<ConstraintF>, SynthesisError>
@@ -101,10 +104,10 @@ impl<P, HGadget, ConstraintF> MerkleTreeTransitionGadget <P, HGadget, Constraint
     pub(crate) fn conditionally_enforce_state_transition<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         start_root: &HGadget::DataGadget,
-        start_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        start_path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         start_leaf: &HGadget::DataGadget,
         new_start_leaf: &HGadget::DataGadget,
-        dest_path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        dest_path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         dest_leaf: &HGadget::DataGadget,
         new_dest_leaf: &HGadget::DataGadget,
         should_enforce: &Boolean,
@@ -141,7 +144,7 @@ impl<P, HGadget, ConstraintF> MerkleTreeTransitionGadget <P, HGadget, Constraint
     pub(crate) fn conditionally_enforce_leaf_replacement<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
         root: &HGadget::DataGadget,
-        path: &FieldBasedMerkleTreePathGadget<P, HGadget, ConstraintF>,
+        path: &FieldBasedBinaryMerkleTreePathGadget<P, HGadget, ConstraintF>,
         leaf: &HGadget::DataGadget,
         new_leaf: &HGadget::DataGadget,
         should_enforce: &Boolean,

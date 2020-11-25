@@ -11,7 +11,7 @@ use r1cs_std::{
     eq::EqGadget,
 };
 use r1cs_crypto::{
-    FieldBasedHashGadget, merkle_tree::field_based_mht::FieldBasedMerkleTreePathGadget,
+    FieldBasedHashGadget, merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget
 };
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use crate::{
@@ -122,7 +122,7 @@ where
     pub fn conditionally_enforce<CS: ConstraintSystem<ConstraintF>>(
         mut cs:                     CS,
         prover_data:                CoreTxMerkleTreeStateTransitionRuleProverData<ConstraintF, H, MHTP>,
-        tx_gadget:                  &<Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::TransactionGadget,
+        tx_gadget:                  &<Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::TransactionGadget,
         tx_hash_without_nonces_g:   FpGadget<ConstraintF>,
         should_enforce:             &Boolean,
     ) -> Result<Self, SynthesisError>
@@ -161,12 +161,12 @@ where
             )?;
 
             // Alloc merkle paths
-            let mst_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
+            let mst_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc mst_path_to_input_{}", i)),
                 || Ok(&prover_data.mst_paths_to_inputs[i])
             )?;
 
-            let mst_path_to_output_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
+            let mst_path_to_output_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc mst_path_to_output_{}", i)),
                 || Ok(&prover_data.mst_paths_to_outputs[i])
             )?;
@@ -233,7 +233,7 @@ where
 }
 
 
-impl<ConstraintF, G, GG, H, HG, MHTP, TXP> TxTreeStateTransitionRule<ConstraintF, H, MHTP> for
+impl<ConstraintF, G, GG, H, HG, MHTP, TXP> TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP> for
     CoreTxMerkleTreeStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
 where
     ConstraintF: PrimeField,
@@ -244,8 +244,7 @@ where
     TXP: BaseTransactionParameters<ConstraintF, G>,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
-    type MerklePath = FieldBasedBinaryMHTPath<MHTP>;
-    type MerklePathGadget = FieldBasedMerkleTreePathGadget<MHTP, HG, ConstraintF>;
+    type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;
     type Transaction = CoreTransaction<ConstraintF, G, H, TXP>;
     type TransactionGadget = CoreTransactionGadget<ConstraintF, G, GG, H, HG, TXP>;
 
@@ -400,7 +399,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
         mut cs:             CS,
         mst_rule:           CoreTxMerkleTreeStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>,
         prover_data:        CoreTxBVTStateTransitionRuleProverData<ConstraintF, H, MHTP>,
-        tx_gadget:          &<Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::TransactionGadget,
+        tx_gadget:          &<Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::TransactionGadget,
         should_enforce:     &Boolean,
         bv_tree_batch_size: usize,
     ) -> Result<Self, SynthesisError>
@@ -424,13 +423,13 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
         for i in 0..MAX_I_O_COIN_BOXES {
 
             // Alloc merkle paths
-            let bvt_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
+            let bvt_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc bvt_path_to_input_{}", i)),
                 || Ok(&prover_data.bvt_paths_to_inputs[i])
             )?;
             bvt_path_to_input_gs.push(bvt_path_to_input_i_g);
 
-            let bvt_path_to_output_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, MHTP>>::MerklePathGadget::alloc(
+            let bvt_path_to_output_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::MerklePathGadget::alloc(
                 cs.ns(|| format!("alloc bvt_path_to_output_{}", i)),
                 || Ok(&prover_data.bvt_paths_to_outputs[i])
             )?;
@@ -472,7 +471,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
 }
 
 
-impl<ConstraintF, G, GG, H, HG, MHTP, TXP> TxTreeStateTransitionRule<ConstraintF, H, MHTP> for
+impl<ConstraintF, G, GG, H, HG, MHTP, TXP> TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP> for
 CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
     where
         ConstraintF: PrimeField,
@@ -483,8 +482,7 @@ CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         TXP: BaseTransactionParameters<ConstraintF, G>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
-    type MerklePath = FieldBasedBinaryMHTPath<MHTP>;
-    type MerklePathGadget = FieldBasedMerkleTreePathGadget<MHTP, HG, ConstraintF>;
+    type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;
     type Transaction = CoreTransaction<ConstraintF, G, H, TXP>;
     type TransactionGadget = CoreTransactionGadget<ConstraintF, G, GG, H, HG, TXP>;
 

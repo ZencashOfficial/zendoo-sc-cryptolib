@@ -21,7 +21,7 @@ use r1cs_std::{
 };
 use r1cs_crypto::{
     crh::FieldBasedHashGadget,
-    merkle_tree::field_based_mht::FieldBasedMerkleTreePathGadget
+    merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget
 };
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use std::marker::PhantomData;
@@ -167,8 +167,7 @@ for CoreTxInTreeRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         TXP: BaseTransactionParameters<ConstraintF, G>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
-    type MerklePath = FieldBasedBinaryMHTPath<MHTP>;
-    type MerklePathGadget = FieldBasedMerkleTreePathGadget<MHTP, HG, ConstraintF>;
+    type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;
     type Transaction = CoreTransaction<ConstraintF, G, H, TXP>;
     type TransactionGadget = CoreTransactionGadget<ConstraintF, G, GG, H, HG, TXP>;
 

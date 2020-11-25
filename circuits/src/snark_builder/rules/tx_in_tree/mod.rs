@@ -1,6 +1,6 @@
 use algebra::PrimeField;
-use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters, FieldHasher, FieldBasedMerkleTreePath};
-use r1cs_crypto::FieldBasedHashGadget;
+use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters, FieldHasher, FieldBasedBinaryMHTPath};
+use r1cs_crypto::{FieldBasedHashGadget, FieldBasedMerkleTreePathGadget};
 use r1cs_std::alloc::AllocGadget;
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::fields::fp::FpGadget;
@@ -16,10 +16,7 @@ pub trait TxInTreeRule<
     P: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >: Sized
 {
-    /// TODO: Would be enough to specify MerklePathGadget if we had a gadget trait
-    ///       MerklePaths in Ginger.
-    type MerklePath: FieldBasedMerkleTreePath<H=H, Parameters=P>;
-    type MerklePathGadget: AllocGadget<Self::MerklePath, ConstraintF>;
+    type MerklePathGadget:      FieldBasedMerkleTreePathGadget<FieldBasedBinaryMHTPath<P>, H, HG, ConstraintF>;
 
     /// TODO: Would be enough to specify TransactionGadget if TransactionGadget implemented
     ///       the FieldHasherGadget trait.
