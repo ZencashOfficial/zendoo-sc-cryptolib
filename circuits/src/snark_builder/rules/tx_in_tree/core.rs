@@ -6,9 +6,8 @@ use crate::{
             transaction::CoreTransactionGadget,
             transition::MerkleTreeTransitionGadget,
         },
-        constants::BaseTransactionParameters
+        constants::CoreTransactionParameters
     },
-    base_tx_primitives::transaction::CoreTransaction,
     rules::tx_in_tree::TxInTreeRule,
 };
 use r1cs_std::{
@@ -19,10 +18,7 @@ use r1cs_std::{
     to_field_gadget_vec::ToConstraintFieldGadget,
     eq::EqGadget
 };
-use r1cs_crypto::{
-    crh::FieldBasedHashGadget,
-    merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget
-};
+use r1cs_crypto::{crh::FieldBasedHashGadget, merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget, FieldHasherGadget};
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use std::marker::PhantomData;
 
@@ -67,12 +63,10 @@ pub struct CoreTxInTreeRule<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: BaseTransactionParameters<ConstraintF, G>,
+    TXP: CoreTransactionParameters<ConstraintF, G>,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
-    message_to_sign_g:  FpGadget<ConstraintF>,
-
     _group:             PhantomData<G>,
     _group_gadget:      PhantomData<GG>,
     _hash:              PhantomData<H>,
@@ -88,15 +82,12 @@ where
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: BaseTransactionParameters<ConstraintF, G>,
+    TXP: CoreTransactionParameters<ConstraintF, G>,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
-    pub fn new<CS: ConstraintSystem<ConstraintF>>(
-        message_to_sign_g: FpGadget<ConstraintF>
-    ) -> Self
+    pub fn new<CS: ConstraintSystem<ConstraintF>>() -> Self
     {
         Self {
-            message_to_sign_g,
             _group: PhantomData,
             _group_gadget: PhantomData,
             _hash: PhantomData,
@@ -129,12 +120,7 @@ where
             || prover_data.new_txs_tree_root.as_ref().ok_or(SynthesisError::AssignmentMissing)
         )?;
 
-        let message_to_sign_g = tx_gadget.enforce_message_to_sign(
-            cs.ns(|| "enforce message_to_sign")
-        )?;
-
         let new_instance = Self {
-            message_to_sign_g,
             _group: PhantomData,
             _group_gadget: PhantomData,
             _hash: PhantomData,
@@ -164,11 +150,10 @@ for CoreTxInTreeRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: BaseTransactionParameters<ConstraintF, G>,
+        TXP: CoreTransactionParameters<ConstraintF, G>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;
-    type Transaction = CoreTransaction<ConstraintF, G, H, TXP>;
     type TransactionGadget = CoreTransactionGadget<ConstraintF, G, GG, H, HG, TXP>;
 
     #[inline]
@@ -182,9 +167,9 @@ for CoreTxInTreeRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
     ) -> Result<(), SynthesisError> {
 
         // Enforce tx_hash
-        let tx_hash_g = tx_gadget.enforce_tx_hash(
+        let tx_hash_g = tx_gadget.enforce_hash(
             cs.ns(|| "enforce tx_hash"),
-            self.message_to_sign_g.clone()
+            None
         )?;
 
         // Check correct update of Applied Payment Transactions Merkle Tree

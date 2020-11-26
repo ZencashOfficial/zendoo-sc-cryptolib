@@ -3,10 +3,11 @@ use primitives::{signature::schnorr::field_based_schnorr::{
     FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme, FieldBasedSchnorrPk
 }, FieldBasedHash, FieldHasher, FieldBasedSignatureScheme};
 use crate::base_tx_circuit::{
-    constants::BaseTransactionParameters, base_tx_primitives::BaseTxError as Error
+    constants::CoreTransactionParameters, base_tx_primitives::BaseTxError as Error
 };
 use std::marker::PhantomData;
 use rand::rngs::OsRng;
+use crate::base_tx_circuit::constants::TransactionParameters;
 
 
 ///TODO: I think we need some kind of hash personalization. Let's think about which kind.
@@ -232,17 +233,15 @@ pub struct InputCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>
 
 pub type OutputCoinBox<F, G> = CoinBox<F, G>;
 
-pub const MAX_I_O_COIN_BOXES: usize = 2;
-
-/// Representation of a transaction able to hold up to `MAX_I_O_COIN_BOXES` inputs and outputs.
-/// Internally, for Snark friendliness purposes, we will always consider `MAX_I_O_COIN_BOXES`,
+/// Representation of a transaction able to hold up to `MAX_I_O_BOXES` inputs and outputs.
+/// Internally, for Snark friendliness purposes, we will always consider `MAX_I_O_BOXES`,
 /// by adding to `inputs`, `num_inputs` default boxes and to `outputs`, `num_outputs`
 /// default boxes.
 pub struct CoreTransaction<
     F: PrimeField,
     G: ProjectiveCurve + ToConstraintField<F>,
     H: FieldBasedHash<Data = F>,
-    P: BaseTransactionParameters<F, G>
+    P: CoreTransactionParameters<F, G>
 > {
     /// Coin boxes related data that we manage explicitly in the circuit
     pub(crate) inputs: Vec<InputCoinBox<F, G>>,
@@ -259,6 +258,10 @@ pub struct CoreTransaction<
     pub(crate) non_coin_boxes_output_data_cumulative_hash: F,
     pub(crate) non_coin_boxes_input_proofs_cumulative_hash: F,
 
+    /// Will be populated later
+    tx_hash_without_nonces: Option<F>,
+    message_to_sign:        Option<F>,
+
     _parameters: PhantomData<P>,
     _hash: PhantomData<H>,
 }
@@ -268,7 +271,7 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: BaseTransactionParameters<F, G>
+        P: CoreTransactionParameters<F, G>
 {
     pub fn new(
         inputs: Vec<InputCoinBox<F, G>>,
@@ -304,16 +307,16 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
         non_coin_boxes_input_proofs_cumulative_hash: F,
     ) -> Result<Self, Error> {
         let num_inputs = inputs.len();
-        assert!(num_inputs >= 1 && num_inputs <= MAX_I_O_COIN_BOXES);
+        assert!(num_inputs >= 1 && num_inputs <= <P as TransactionParameters>::MAX_I_O_BOXES);
 
         let num_outputs = outputs.len();
-        assert!(num_outputs >= 1 && num_outputs <= MAX_I_O_COIN_BOXES);
+        assert!(num_outputs >= 1 && num_outputs <= <P as TransactionParameters>::MAX_I_O_BOXES);
 
-        // Pad inputs to `MAX_I_O_COIN_BOXES`
-        inputs.extend_from_slice(vec![P::PADDING_INPUT_BOX; MAX_I_O_COIN_BOXES - num_inputs].as_slice());
+        // Pad inputs to `MAX_I_O_BOXES`
+        inputs.extend_from_slice(vec![P::PADDING_INPUT_BOX; <P as TransactionParameters>::MAX_I_O_BOXES - num_inputs].as_slice());
 
-        // Create output boxes and pad up to `MAX_I_O_COIN_BOXES`
-        outputs.extend_from_slice(vec![P::PADDING_OUTPUT_BOX; MAX_I_O_COIN_BOXES - num_outputs].as_slice());
+        // Create output boxes and pad up to `MAX_I_O_BOXES`
+        outputs.extend_from_slice(vec![P::PADDING_OUTPUT_BOX; <P as TransactionParameters>::MAX_I_O_BOXES - num_outputs].as_slice());
 
         Ok(Self {
             inputs, num_inputs, outputs, num_outputs, fee, timestamp,
@@ -321,6 +324,8 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
             non_coin_boxes_input_ids_cumulative_hash,
             non_coin_boxes_output_data_cumulative_hash,
             non_coin_boxes_input_proofs_cumulative_hash,
+            tx_hash_without_nonces: None,
+            message_to_sign: None,
             _parameters: PhantomData, _hash: PhantomData
         })
     }
@@ -338,55 +343,68 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
     /// a priori, and we enforce this too in the primitive: this allows to halve the cost
     /// of tx hashes inside the circuit.
     pub fn compute_tx_hash_without_nonces(
-        &self,
+        &mut self,
     ) -> Result<F, Error> {
         let mut digest = H::init(None);
 
-        // H(input_ids)
-        self.inputs.iter().enumerate().map(
-            |(index, input)| {
-                digest.update(input.box_.id.ok_or(Error::InvalidCoinBox(format!("Missing id for box {}", index)))?);
-                Ok(())
-            }
-        ).collect::<Result<(), Error>>()?;
+        if self.tx_hash_without_nonces.is_some() {
+            Ok(self.tx_hash_without_nonces.unwrap())
+        } else {
+            // H(input_ids)
+            self.inputs.iter().enumerate().map(
+                |(index, input)| {
+                    digest.update(input.box_.id.ok_or(Error::InvalidCoinBox(format!("Missing id for box {}", index)))?);
+                    Ok(())
+                }
+            ).collect::<Result<(), Error>>()?;
 
-        let inputs_id_hash = digest.finalize();
+            let inputs_id_hash = digest.finalize();
 
-        // H(outputs_data)
-        //TODO: Is this the correct way ?
-        digest.reset(None);
+            // H(outputs_data)
+            //TODO: Is this the correct way ?
+            digest.reset(None);
 
-        self.outputs.iter().enumerate().map(
-            |(index, output)| {
-                let output_as_fes = output.to_field_elements()
-                    .map_err(
-                        |e| Error::InvalidCoinBox(format!("Unable to convert output box {} to field elements: {}", index, e.to_string()))
-                    )?;
-                output_as_fes.iter().for_each(|&fe| { digest.update(fe); });
-                Ok(())
-            }
-        ).collect::<Result<(), Error>>()?;
+            self.outputs.iter().enumerate().map(
+                |(index, output)| {
+                    let output_as_fes = output.to_field_elements()
+                        .map_err(
+                            |e| Error::InvalidCoinBox(format!("Unable to convert output box {} to field elements: {}", index, e.to_string()))
+                        )?;
+                    output_as_fes.iter().for_each(|&fe| { digest.update(fe); });
+                    Ok(())
+                }
+            ).collect::<Result<(), Error>>()?;
 
-        let outputs_data_hash = digest.finalize();
+            let outputs_data_hash = digest.finalize();
 
-        //tx_hash_without_nonces
-        digest.reset(None);
+            //tx_hash_without_nonces
+            digest.reset(None);
 
-        digest
-            .update(inputs_id_hash)
-            .update(self.non_coin_boxes_input_ids_cumulative_hash)
-            .update(outputs_data_hash)
-            .update(self.non_coin_boxes_output_data_cumulative_hash)
-            .update(F::from(self.timestamp))
-            .update(F::from(self.fee))
-            .update(self.custom_fields_hash);
-        Ok(digest.finalize())
+            digest
+                .update(inputs_id_hash)
+                .update(self.non_coin_boxes_input_ids_cumulative_hash)
+                .update(outputs_data_hash)
+                .update(self.non_coin_boxes_output_data_cumulative_hash)
+                .update(F::from(self.timestamp))
+                .update(F::from(self.fee))
+                .update(self.custom_fields_hash);
+            let tx_hash_without_nonces = digest.finalize();
+
+            self.tx_hash_without_nonces = Some(tx_hash_without_nonces.clone());
+            self.message_to_sign = Some(tx_hash_without_nonces.clone()); //They are the same
+
+            Ok(tx_hash_without_nonces)
+        }
     }
 
-    /// message_to_sign == tx_hash_without_nonces currently. Is it ok ??
-    pub fn get_message_to_sign(&self) -> Result<F, Error>
+    /// message_to_sign == tx_hash_without_nonces currently.
+    pub fn compute_message_to_sign(&mut self) -> Result<F, Error>
     {
-        self.compute_tx_hash_without_nonces()
+        if self.message_to_sign.is_some() {
+            Ok(self.message_to_sign.unwrap())
+        } else {
+            self.compute_tx_hash_without_nonces()
+        }
     }
 
     /// Checks performed:
@@ -402,7 +420,9 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
         let mut outputs_sum = 0;
         let mut signatures_verified = true;
 
-        let message_to_sign = self.get_message_to_sign()?;
+        let message_to_sign = self.message_to_sign.ok_or(
+            Error::InvalidTx("Unable to verify tx: message_to_sign not computed".to_owned())
+        )?;
 
         for i in 0..self.num_inputs {
             inputs_sum += self.inputs[i].box_.box_data.amount;
@@ -429,7 +449,7 @@ impl<F, G, H, P> FieldHasher<F, H> for CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: BaseTransactionParameters<F, G>
+        P: CoreTransactionParameters<F, G>
 {
     /// TODO: For efficiency reasons, we consider also the padding boxes in computing
     ///       message_to_sign == tx_hash_without_nonces. This means that the tx_hash
@@ -448,7 +468,9 @@ impl<F, G, H, P> FieldHasher<F, H> for CoreTransaction<F, G, H, P>
         let sigs_hash = sigs_digest.finalize();
 
         // message_to_sign
-        let message_to_sign = self.get_message_to_sign()?;
+        let message_to_sign = self.message_to_sign.ok_or(
+            Error::InvalidTx("Unable to verify tx: message_to_sign not computed".to_owned())
+        )?;
 
         // tx_hash
         Ok(H::init(None)
@@ -465,7 +487,7 @@ impl<F, G, H, P> SemanticallyValid for CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: BaseTransactionParameters<F, G>
+        P: CoreTransactionParameters<F, G>
 {
     fn is_valid(&self) -> bool {
         let mut is_valid = true;
@@ -492,13 +514,13 @@ impl<F, G, H, P> Default for CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: BaseTransactionParameters<F, G>
+        P: CoreTransactionParameters<F, G>
 {
     fn default() -> Self {
         Self {
-            inputs: vec![InputCoinBox::<F, G>::default(); MAX_I_O_COIN_BOXES],
+            inputs: vec![InputCoinBox::<F, G>::default(); <P as TransactionParameters>::MAX_I_O_BOXES],
             num_inputs: 2,
-            outputs: vec![OutputCoinBox::<F, G>::default(); MAX_I_O_COIN_BOXES],
+            outputs: vec![OutputCoinBox::<F, G>::default(); <P as TransactionParameters>::MAX_I_O_BOXES],
             num_outputs: 2,
             fee: 0,
             timestamp: 0,
@@ -506,6 +528,8 @@ impl<F, G, H, P> Default for CoreTransaction<F, G, H, P>
             non_coin_boxes_input_ids_cumulative_hash: F::default(),
             non_coin_boxes_output_data_cumulative_hash: F::default(),
             non_coin_boxes_input_proofs_cumulative_hash: F::default(),
+            tx_hash_without_nonces: None,
+            message_to_sign: None,
             _parameters: PhantomData,
             _hash: PhantomData
         }

@@ -21,13 +21,14 @@ use r1cs_crypto::{FieldBasedHashGadget, signature::schnorr::field_based_schnorr:
 }, FieldHasherGadget, FieldBasedSigGadget};
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::{
-        CoinBox, NoncedCoinBox, MAX_I_O_COIN_BOXES, CoreTransaction,
+        CoinBox, NoncedCoinBox, CoreTransaction,
     },
-    constants::BaseTransactionParameters,
+    constants::CoreTransactionParameters,
 };
 use std::{
     borrow::Borrow, marker::PhantomData,
 };
+use crate::base_tx_circuit::constants::TransactionParameters;
 
 pub struct CoinBoxGadget<
     ConstraintF: PrimeField,
@@ -597,7 +598,7 @@ pub struct CoreTransactionGadget<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    P: BaseTransactionParameters<ConstraintF, G>,
+    P: CoreTransactionParameters<ConstraintF, G>,
 >
 {
     /// Coinboxes related data that we manage explicitly in the circuit
@@ -612,6 +613,10 @@ pub struct CoreTransactionGadget<
     pub(crate) non_coin_boxes_input_ids_cumulative_hash: FpGadget<ConstraintF>,
     pub(crate) non_coin_boxes_output_data_cumulative_hash: FpGadget<ConstraintF>,
 
+    /// Will be enforced and populated later
+    pub(crate) tx_hash_without_nonces_g:   Option<FpGadget<ConstraintF>>,
+    message_to_sign_g:          Option<FpGadget<ConstraintF>>,
+
     _parameters: PhantomData<P>,
 }
 
@@ -623,7 +628,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        P: BaseTransactionParameters<ConstraintF, G>,
+        P: CoreTransactionParameters<ConstraintF, G>,
 {
     /// Allocate input and output boxes, and enforce a Boolean for each of them, indicating if
     /// it's a padding box or not.
@@ -660,8 +665,8 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             )
         };
 
-        let mut input_gs = Vec::with_capacity(MAX_I_O_COIN_BOXES);
-        let mut output_gs = Vec::with_capacity(MAX_I_O_COIN_BOXES);
+        let mut input_gs = Vec::with_capacity(<P as TransactionParameters>::MAX_I_O_BOXES);
+        let mut output_gs = Vec::with_capacity(<P as TransactionParameters>::MAX_I_O_BOXES);
 
         let padding_input_box_g = NoncedCoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
             cs.ns(|| "hardcode padding input box"),
@@ -673,7 +678,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             &(P::PADDING_OUTPUT_BOX)
         );
 
-        // Alloc input and output boxes that must be exactly `MAX_I_O_COIN_BOXES`
+        // Alloc input and output boxes that must be exactly `MAX_I_O_BOXES`
         inputs?.into_iter().enumerate().map(|(i, input)| {
 
             let input_sig_g = FieldBasedSchnorrSigGadget::<ConstraintF, G>::alloc(
@@ -700,7 +705,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             Ok(())
         }).collect::<Result<(), SynthesisError>>()?;
 
-        assert_eq!(input_gs.len(), MAX_I_O_COIN_BOXES);
+        assert_eq!(input_gs.len(), <P as TransactionParameters>::MAX_I_O_BOXES);
 
         outputs?.into_iter().enumerate().map(|(i, output)|{
             let output_g = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
@@ -721,7 +726,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             Ok(())
         }).collect::<Result<(), SynthesisError>>()?;
 
-        assert_eq!(output_gs.len(), MAX_I_O_COIN_BOXES);
+        assert_eq!(output_gs.len(), <P as TransactionParameters>::MAX_I_O_BOXES);
 
         // Alloc fee by first allocating the u64 bits and then safely packing them into a field element
         let fee = {
@@ -765,6 +770,8 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             custom_fields_hash,
             non_coin_boxes_input_ids_cumulative_hash,
             non_coin_boxes_output_data_cumulative_hash,
+            tx_hash_without_nonces_g: None,
+            message_to_sign_g: None,
             _parameters: PhantomData,
         })
     }
@@ -783,66 +790,77 @@ impl<ConstraintF, G, GG, H, HG, P> CoreTransactionGadget<ConstraintF, G, GG, H, 
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        P: BaseTransactionParameters<ConstraintF, G>,
+        P: CoreTransactionParameters<ConstraintF, G>,
 {
     pub fn enforce_tx_hash_without_nonces<CS: ConstraintSystem<ConstraintF>>(
-        &self,
+        &mut self,
         mut cs: CS,
     ) -> Result<HG::DataGadget, SynthesisError>
     {
-        // H(input_ids)
-        let mut hash_inputs = Vec::new();
+        if self.tx_hash_without_nonces_g.is_some() {
+            Ok(self.tx_hash_without_nonces_g.clone().unwrap())
+        } else {
+            // H(input_ids)
+            let mut hash_inputs = Vec::new();
 
-        self.inputs.iter().enumerate().for_each(
-            |(_, input)| {
-                hash_inputs.push(input.box_.id.clone())
-            }
-        );
+            self.inputs.iter().enumerate().for_each(
+                |(_, input)| {
+                    hash_inputs.push(input.box_.id.clone())
+                }
+            );
 
-        let inputs_digest = HG::check_evaluation_gadget(
-            cs.ns(|| "H(input_ids)"),
-            hash_inputs.as_slice()
-        )?;
+            let inputs_digest = HG::check_evaluation_gadget(
+                cs.ns(|| "H(input_ids)"),
+                hash_inputs.as_slice()
+            )?;
 
-        // H(output_data)
-        //TODO: Is this the correct way ?
-        let mut hash_outputs = Vec::new();
+            // H(output_data)
+            //TODO: Is this the correct way ?
+            let mut hash_outputs = Vec::new();
 
-        self.outputs.iter().enumerate().map(
-            |(index, output)| {
-                let output_as_fes = output.box_.to_field_gadget_elements(
-                    cs.ns(|| format!("get_box_data_output_{}", index))
-                )?;
-                hash_outputs.extend_from_slice(output_as_fes.as_slice());
-                Ok(())
-            }
-        ).collect::<Result<(), SynthesisError>>()?;
+            self.outputs.iter().enumerate().map(
+                |(index, output)| {
+                    let output_as_fes = output.box_.to_field_gadget_elements(
+                        cs.ns(|| format!("get_box_data_output_{}", index))
+                    )?;
+                    hash_outputs.extend_from_slice(output_as_fes.as_slice());
+                    Ok(())
+                }
+            ).collect::<Result<(), SynthesisError>>()?;
 
-        let outputs_digest = HG::check_evaluation_gadget(
-            cs.ns(|| "H(output_data)"),
-            hash_outputs.as_slice()
-        )?;
+            let outputs_digest = HG::check_evaluation_gadget(
+                cs.ns(|| "H(output_data)"),
+                hash_outputs.as_slice()
+            )?;
 
-        // tx_hash_without_nonces
-        let tx_hash_without_nonces = HG::check_evaluation_gadget(
-            cs.ns(|| "tx_hash_without_nonces"),
-            &[
-                inputs_digest, self.non_coin_boxes_input_ids_cumulative_hash.clone(),
-                outputs_digest, self.non_coin_boxes_output_data_cumulative_hash.clone(),
-                self.fee.clone(), self.timestamp.clone(), self.custom_fields_hash.clone()
-            ]
-        )?;
+            // tx_hash_without_nonces
+            let tx_hash_without_nonces = HG::check_evaluation_gadget(
+                cs.ns(|| "tx_hash_without_nonces"),
+                &[
+                    inputs_digest, self.non_coin_boxes_input_ids_cumulative_hash.clone(),
+                    outputs_digest, self.non_coin_boxes_output_data_cumulative_hash.clone(),
+                    self.fee.clone(), self.timestamp.clone(), self.custom_fields_hash.clone()
+                ]
+            )?;
 
-        Ok(tx_hash_without_nonces)
+            self.tx_hash_without_nonces_g = Some(tx_hash_without_nonces.clone());
+            self.message_to_sign_g = Some(tx_hash_without_nonces.clone());
+
+            Ok(tx_hash_without_nonces)
+        }
     }
 
     /// message_to_sign == tx_hash_without_nonces
     pub fn enforce_message_to_sign<CS: ConstraintSystem<ConstraintF>>(
-        &self,
+        &mut self,
         cs: CS,
     ) -> Result<HG::DataGadget, SynthesisError>
     {
-        self.enforce_tx_hash_without_nonces(cs)
+        if self.message_to_sign_g.is_some() {
+            Ok(self.message_to_sign_g.clone().unwrap())
+        } else {
+            self.enforce_tx_hash_without_nonces(cs)
+        }
     }
 
     /// Enforces:
@@ -853,13 +871,13 @@ impl<ConstraintF, G, GG, H, HG, P> CoreTransactionGadget<ConstraintF, G, GG, H, 
     pub fn conditionally_verify<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
-        message_to_sign: FpGadget<ConstraintF>,
         should_enforce: &Boolean,
     ) -> Result<(), SynthesisError>
     {
         let mut inputs_sum = FpGadget::<ConstraintF>::zero(cs.ns(|| "initialize inputs_sum"))?;
         let mut outputs_sum = inputs_sum.clone();
         let zero = outputs_sum.clone();
+        let message_to_sign = self.message_to_sign_g.clone().ok_or(SynthesisError::AssignmentMissing)?;
 
         self.inputs.iter().enumerate().map(
             |(index, input)| {
@@ -926,14 +944,27 @@ impl<ConstraintF, G, GG, H, HG, P> CoreTransactionGadget<ConstraintF, G, GG, H, 
 
         Ok(())
     }
+}
 
+impl<ConstraintF, G, GG, H, HG, P> FieldHasherGadget<H, ConstraintF, HG>
+for CoreTransactionGadget<ConstraintF, G, GG, H, HG, P>
+    where
+        ConstraintF: PrimeField,
+        G: ProjectiveCurve + ToConstraintField<ConstraintF>,
+        GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
+        H: FieldBasedHash<Data = ConstraintF>,
+        HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+        P: CoreTransactionParameters<ConstraintF, G>,
+{
     /// PREREQUISITES: `message_to_sign` already enforced
-    pub(crate) fn enforce_tx_hash<CS: ConstraintSystem<ConstraintF>>(
+    fn enforce_hash<CS: ConstraintSystem<ConstraintF>>(
         &self,
         mut cs: CS,
-        message_to_sign: FpGadget<ConstraintF>,
-    ) -> Result<HG::DataGadget, SynthesisError>
-    {
+        _personalization: Option<&[<HG as FieldBasedHashGadget<H, ConstraintF>>::DataGadget]>
+    ) -> Result<<HG as FieldBasedHashGadget<H, ConstraintF>>::DataGadget, SynthesisError> {
+
+        let message_to_sign = self.message_to_sign_g.clone().ok_or(SynthesisError::AssignmentMissing)?;
+
         //H(input_sigs)
         let mut sigs_digest = Vec::new();
 

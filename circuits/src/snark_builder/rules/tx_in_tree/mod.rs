@@ -1,7 +1,6 @@
 use algebra::PrimeField;
-use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters, FieldHasher, FieldBasedBinaryMHTPath};
-use r1cs_crypto::{FieldBasedHashGadget, FieldBasedMerkleTreePathGadget};
-use r1cs_std::alloc::AllocGadget;
+use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters, FieldBasedBinaryMHTPath};
+use r1cs_crypto::{FieldBasedHashGadget, FieldBasedMerkleTreePathGadget, FieldHasherGadget};
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::fields::fp::FpGadget;
 
@@ -16,12 +15,8 @@ pub trait TxInTreeRule<
     P: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >: Sized
 {
-    type MerklePathGadget:      FieldBasedMerkleTreePathGadget<FieldBasedBinaryMHTPath<P>, H, HG, ConstraintF>;
-
-    /// TODO: Would be enough to specify TransactionGadget if TransactionGadget implemented
-    ///       the FieldHasherGadget trait.
-    type Transaction: FieldHasher<ConstraintF, H>;
-    type TransactionGadget: AllocGadget<Self::Transaction, ConstraintF>;
+    type MerklePathGadget:     FieldBasedMerkleTreePathGadget<FieldBasedBinaryMHTPath<P>, H, HG, ConstraintF>;
+    type TransactionGadget:    FieldHasherGadget<H, ConstraintF, HG>;
 
     fn enforce_rule<CS: ConstraintSystem<ConstraintF>>(
         &self,

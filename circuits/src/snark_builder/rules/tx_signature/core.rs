@@ -4,7 +4,7 @@ use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::fields::fp::FpGadget;
 use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters};
 use r1cs_crypto::FieldBasedHashGadget;
-use crate::base_tx_circuit::constants::BaseTransactionParameters;
+use crate::base_tx_circuit::constants::CoreTransactionParameters;
 use std::marker::PhantomData;
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use crate::snark_builder::rules::tx_signature::TxSignatureRule;
@@ -18,12 +18,10 @@ pub struct CoreTxSignatureRule<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: BaseTransactionParameters<ConstraintF, G>,
+    TXP: CoreTransactionParameters<ConstraintF, G>,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
-    message_to_sign_g:  FpGadget<ConstraintF>,
-
     _group:             PhantomData<G>,
     _group_gadget:      PhantomData<GG>,
     _hash:              PhantomData<H>,
@@ -39,15 +37,12 @@ impl<ConstraintF, G, GG, H, HG, MHTP, TXP> CoreTxSignatureRule<ConstraintF, G, G
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: BaseTransactionParameters<ConstraintF, G>,
+        TXP: CoreTransactionParameters<ConstraintF, G>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
-    pub fn new(
-        message_to_sign_g: FpGadget<ConstraintF>
-    ) -> Self
+    pub fn new() -> Self
     {
         Self {
-            message_to_sign_g,
             _group: PhantomData,
             _group_gadget: PhantomData,
             _hash: PhantomData,
@@ -66,7 +61,7 @@ for CoreTxSignatureRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: BaseTransactionParameters<ConstraintF, G>,
+        TXP: CoreTransactionParameters<ConstraintF, G>,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type Transaction = CoreTransaction<ConstraintF, G, H, TXP>;
@@ -81,7 +76,6 @@ for CoreTxSignatureRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
     {
         tx_gadget.conditionally_verify(
             cs.ns(|| "verify input boxes signatures"),
-            self.message_to_sign_g.clone(),
             should_enforce
         )
     }
