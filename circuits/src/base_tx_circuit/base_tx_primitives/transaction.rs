@@ -3,18 +3,18 @@ use primitives::{signature::schnorr::field_based_schnorr::{
     FieldBasedSchnorrSignature, FieldBasedSchnorrSignatureScheme, FieldBasedSchnorrPk
 }, FieldBasedHash, FieldHasher, FieldBasedSignatureScheme};
 use crate::base_tx_circuit::{
-    constants::CoreTransactionParameters, base_tx_primitives::BaseTxError as Error
+    constants::TransactionParameters, base_tx_primitives::BaseTxError as Error
 };
 use std::marker::PhantomData;
 use rand::rngs::OsRng;
-use crate::base_tx_circuit::constants::TransactionParameters;
+use serde::{Serialize, Deserialize};
 
 
 ///TODO: I think we need some kind of hash personalization. Let's think about which kind.
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq, Debug)]
 pub enum CoinBoxType {
     ZenBox,
     ForgerBox,
@@ -57,7 +57,8 @@ impl Default for CoinBoxType {
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[serde(bound(deserialize = "F: PrimeField"))]
 pub struct CoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub box_type: CoinBoxType,
     pub amount: u64,
@@ -143,10 +144,13 @@ impl<F, G> ToConstraintField<F> for CoinBox<F, G>
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[serde(bound(deserialize = "F: PrimeField"))]
 pub struct NoncedCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>>{
     pub box_data: CoinBox<F, G>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nonce: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<F>,
 }
 
@@ -225,7 +229,8 @@ impl<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> SemanticallyValid
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Debug)]
+#[serde(bound(deserialize = "F: PrimeField"))]
 pub struct InputCoinBox<F: PrimeField, G: ProjectiveCurve + ToConstraintField<F>> {
     pub(crate) box_: NoncedCoinBox<F, G>,
     pub(crate) sig: FieldBasedSchnorrSignature<F, G>
@@ -237,11 +242,19 @@ pub type OutputCoinBox<F, G> = CoinBox<F, G>;
 /// Internally, for Snark friendliness purposes, we will always consider `MAX_I_O_BOXES`,
 /// by adding to `inputs`, `num_inputs` default boxes and to `outputs`, `num_outputs`
 /// default boxes.
+#[derive(Derivative)]
+#[derivative(
+    PartialEq(bound = "P: TransactionParameters"),
+    Eq(bound = "P: TransactionParameters"),
+    Debug(bound = "P: TransactionParameters"),
+)]
+#[derive(Serialize, Deserialize)]
+#[serde(bound(deserialize = "F: PrimeField"))]
 pub struct CoreTransaction<
     F: PrimeField,
     G: ProjectiveCurve + ToConstraintField<F>,
     H: FieldBasedHash<Data = F>,
-    P: CoreTransactionParameters<F, G>
+    P: TransactionParameters
 > {
     /// Coin boxes related data that we manage explicitly in the circuit
     pub(crate) inputs: Vec<InputCoinBox<F, G>>,
@@ -259,10 +272,14 @@ pub struct CoreTransaction<
     pub(crate) non_coin_boxes_input_proofs_cumulative_hash: F,
 
     /// Will be populated later
+    #[serde(skip_serializing_if = "Option::is_none")]
     tx_hash_without_nonces: Option<F>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     message_to_sign:        Option<F>,
 
+    #[serde(skip)]
     _parameters: PhantomData<P>,
+    #[serde(skip)]
     _hash: PhantomData<H>,
 }
 
@@ -271,7 +288,7 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: CoreTransactionParameters<F, G>
+        P: TransactionParameters
 {
     pub fn new(
         inputs: Vec<InputCoinBox<F, G>>,
@@ -307,16 +324,16 @@ impl<F, G, H, P> CoreTransaction<F, G, H, P>
         non_coin_boxes_input_proofs_cumulative_hash: F,
     ) -> Result<Self, Error> {
         let num_inputs = inputs.len();
-        assert!(num_inputs >= 1 && num_inputs <= <P as TransactionParameters>::MAX_I_O_BOXES);
+        assert!(num_inputs >= 1 && num_inputs <= P::MAX_I_O_BOXES);
 
         let num_outputs = outputs.len();
-        assert!(num_outputs >= 1 && num_outputs <= <P as TransactionParameters>::MAX_I_O_BOXES);
+        assert!(num_outputs >= 1 && num_outputs <= P::MAX_I_O_BOXES);
 
         // Pad inputs to `MAX_I_O_BOXES`
-        inputs.extend_from_slice(vec![P::PADDING_INPUT_BOX; <P as TransactionParameters>::MAX_I_O_BOXES - num_inputs].as_slice());
+        inputs.extend_from_slice(vec![InputCoinBox::<F, G>::default(); P::MAX_I_O_BOXES - num_inputs].as_slice());
 
         // Create output boxes and pad up to `MAX_I_O_BOXES`
-        outputs.extend_from_slice(vec![P::PADDING_OUTPUT_BOX; <P as TransactionParameters>::MAX_I_O_BOXES - num_outputs].as_slice());
+        outputs.extend_from_slice(vec![OutputCoinBox::<F, G>::default(); P::MAX_I_O_BOXES - num_outputs].as_slice());
 
         Ok(Self {
             inputs, num_inputs, outputs, num_outputs, fee, timestamp,
@@ -449,7 +466,7 @@ impl<F, G, H, P> FieldHasher<F, H> for CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: CoreTransactionParameters<F, G>
+        P: TransactionParameters
 {
     /// TODO: For efficiency reasons, we consider also the padding boxes in computing
     ///       message_to_sign == tx_hash_without_nonces. This means that the tx_hash
@@ -487,7 +504,7 @@ impl<F, G, H, P> SemanticallyValid for CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: CoreTransactionParameters<F, G>
+        P: TransactionParameters
 {
     fn is_valid(&self) -> bool {
         let mut is_valid = true;
@@ -514,13 +531,13 @@ impl<F, G, H, P> Default for CoreTransaction<F, G, H, P>
         F: PrimeField,
         G: ProjectiveCurve + ToConstraintField<F>,
         H: FieldBasedHash<Data = F>,
-        P: CoreTransactionParameters<F, G>
+        P: TransactionParameters
 {
     fn default() -> Self {
         Self {
-            inputs: vec![InputCoinBox::<F, G>::default(); <P as TransactionParameters>::MAX_I_O_BOXES],
+            inputs: vec![InputCoinBox::<F, G>::default(); P::MAX_I_O_BOXES],
             num_inputs: 2,
-            outputs: vec![OutputCoinBox::<F, G>::default(); <P as TransactionParameters>::MAX_I_O_BOXES],
+            outputs: vec![OutputCoinBox::<F, G>::default(); P::MAX_I_O_BOXES],
             num_outputs: 2,
             fee: 0,
             timestamp: 0,
@@ -533,5 +550,65 @@ impl<F, G, H, P> Default for CoreTransaction<F, G, H, P>
             _parameters: PhantomData,
             _hash: PhantomData
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use algebra::{
+        fields::mnt4753::Fr,
+        curves::mnt6753::G1Projective,
+    };
+    use primitives::crh::poseidon::mnt4753::MNT4PoseidonHash;
+    use crate::base_tx_circuit::constants::TransactionParameters;
+    use super::{InputCoinBox, OutputCoinBox, CoreTransaction};
+    //use serde_test::{Token, assert_tokens};
+
+    struct TestTransactionParameters {}
+
+    impl TransactionParameters for TestTransactionParameters
+    {
+        const MAX_I_O_BOXES: usize = 2;
+    }
+
+    type TestCoreTxParams = TestTransactionParameters;
+    type TestInputCoinBox = InputCoinBox<Fr, G1Projective>;
+    type TestOutputCoinBox = OutputCoinBox<Fr, G1Projective>;
+    type TestTransaction = CoreTransaction<Fr, G1Projective, MNT4PoseidonHash, TestCoreTxParams>;
+
+    #[test]
+    fn serde_json_coin_box() {
+        let json_repr =
+            "{\"box_type\":\"CustomBox\",\"amount\":0,\"custom_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"pk\":{\"x\":[0,0,0,0,0,0,0,0,0,0,0,0],\"y\":[13373016969058414402,5670427856875409064,11667651089292452217,1113053963617943770,12325313033510771412,11510260603202358114,3606323059104122008,6452324570546309730,4644558993695221281,1127165286758606988,10756108507984535957,135547536859714],\"z\":[0,0,0,0,0,0,0,0,0,0,0,0]},\"proposition_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]}";
+
+        let coin_box = TestOutputCoinBox::default();
+        let serialized = serde_json::to_string(&coin_box).unwrap();
+        assert_eq!(json_repr, serialized);
+
+        let coin_box_deserialized: TestOutputCoinBox = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(coin_box, coin_box_deserialized);
+    }
+
+    #[test]
+    fn serde_json_nonced_coin_box() {
+        let json_repr = "{\"box_\":{\"box_data\":{\"box_type\":\"CustomBox\",\"amount\":0,\"custom_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"pk\":{\"x\":[0,0,0,0,0,0,0,0,0,0,0,0],\"y\":[13373016969058414402,5670427856875409064,11667651089292452217,1113053963617943770,12325313033510771412,11510260603202358114,3606323059104122008,6452324570546309730,4644558993695221281,1127165286758606988,10756108507984535957,135547536859714],\"z\":[0,0,0,0,0,0,0,0,0,0,0,0]},\"proposition_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]}},\"sig\":{\"e\":[0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[0,0,0,0,0,0,0,0,0,0,0,0]}}";
+
+        let nonced_coin_box = TestInputCoinBox::default();
+        let serialized = serde_json::to_string(&nonced_coin_box).unwrap();
+        assert_eq!(json_repr, serialized);
+
+        let nonced_coin_box_deserialized: TestInputCoinBox = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(nonced_coin_box, nonced_coin_box_deserialized);
+    }
+
+    #[test]
+    fn serde_json_core_transaction() {
+        let json_repr =
+            "{\"inputs\":[{\"box_\":{\"box_data\":{\"box_type\":\"CustomBox\",\"amount\":0,\"custom_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"pk\":{\"x\":[0,0,0,0,0,0,0,0,0,0,0,0],\"y\":[13373016969058414402,5670427856875409064,11667651089292452217,1113053963617943770,12325313033510771412,11510260603202358114,3606323059104122008,6452324570546309730,4644558993695221281,1127165286758606988,10756108507984535957,135547536859714],\"z\":[0,0,0,0,0,0,0,0,0,0,0,0]},\"proposition_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]}},\"sig\":{\"e\":[0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[0,0,0,0,0,0,0,0,0,0,0,0]}},{\"box_\":{\"box_data\":{\"box_type\":\"CustomBox\",\"amount\":0,\"custom_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"pk\":{\"x\":[0,0,0,0,0,0,0,0,0,0,0,0],\"y\":[13373016969058414402,5670427856875409064,11667651089292452217,1113053963617943770,12325313033510771412,11510260603202358114,3606323059104122008,6452324570546309730,4644558993695221281,1127165286758606988,10756108507984535957,135547536859714],\"z\":[0,0,0,0,0,0,0,0,0,0,0,0]},\"proposition_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]}},\"sig\":{\"e\":[0,0,0,0,0,0,0,0,0,0,0,0],\"s\":[0,0,0,0,0,0,0,0,0,0,0,0]}}],\"num_inputs\":2,\"outputs\":[{\"box_type\":\"CustomBox\",\"amount\":0,\"custom_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"pk\":{\"x\":[0,0,0,0,0,0,0,0,0,0,0,0],\"y\":[13373016969058414402,5670427856875409064,11667651089292452217,1113053963617943770,12325313033510771412,11510260603202358114,3606323059104122008,6452324570546309730,4644558993695221281,1127165286758606988,10756108507984535957,135547536859714],\"z\":[0,0,0,0,0,0,0,0,0,0,0,0]},\"proposition_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]},{\"box_type\":\"CustomBox\",\"amount\":0,\"custom_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"pk\":{\"x\":[0,0,0,0,0,0,0,0,0,0,0,0],\"y\":[13373016969058414402,5670427856875409064,11667651089292452217,1113053963617943770,12325313033510771412,11510260603202358114,3606323059104122008,6452324570546309730,4644558993695221281,1127165286758606988,10756108507984535957,135547536859714],\"z\":[0,0,0,0,0,0,0,0,0,0,0,0]},\"proposition_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]}],\"num_outputs\":2,\"fee\":0,\"timestamp\":0,\"custom_fields_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"non_coin_boxes_input_ids_cumulative_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"non_coin_boxes_output_data_cumulative_hash\":[0,0,0,0,0,0,0,0,0,0,0,0],\"non_coin_boxes_input_proofs_cumulative_hash\":[0,0,0,0,0,0,0,0,0,0,0,0]}";
+        let tx = TestTransaction::default();
+        let serialized = serde_json::to_string(&tx).unwrap();
+        assert_eq!(serialized, json_repr);
+        let tx_deserialized: TestTransaction = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(tx, tx_deserialized);
     }
 }

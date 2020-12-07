@@ -41,3 +41,6 @@ pub use self::demo_circuit::*;
 
 pub mod snark_builder;
 pub use self::snark_builder::*;
+
+#[macro_use]
+extern crate derivative;

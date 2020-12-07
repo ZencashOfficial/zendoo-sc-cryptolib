@@ -4,7 +4,7 @@ use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::fields::fp::FpGadget;
 use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters};
 use r1cs_crypto::FieldBasedHashGadget;
-use crate::base_tx_circuit::constants::CoreTransactionParameters;
+use crate::base_tx_circuit::constants::TransactionParameters;
 use std::marker::PhantomData;
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use crate::snark_builder::rules::tx_signature::TxSignatureRule;
@@ -18,7 +18,7 @@ pub struct CoreTxSignatureRule<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
@@ -37,7 +37,7 @@ impl<ConstraintF, G, GG, H, HG, MHTP, TXP> CoreTxSignatureRule<ConstraintF, G, G
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     pub fn new() -> Self
@@ -61,7 +61,7 @@ for CoreTxSignatureRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type Transaction = CoreTransaction<ConstraintF, G, H, TXP>;

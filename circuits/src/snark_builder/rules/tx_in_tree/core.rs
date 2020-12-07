@@ -6,7 +6,7 @@ use crate::{
             transaction::CoreTransactionGadget,
             transition::MerkleTreeTransitionGadget,
         },
-        constants::CoreTransactionParameters
+        constants::TransactionParameters
     },
     rules::tx_in_tree::TxInTreeRule,
 };
@@ -63,7 +63,7 @@ pub struct CoreTxInTreeRule<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
@@ -82,7 +82,7 @@ where
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     pub fn new<CS: ConstraintSystem<ConstraintF>>() -> Self
@@ -150,7 +150,7 @@ for CoreTxInTreeRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;

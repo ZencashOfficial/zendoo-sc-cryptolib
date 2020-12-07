@@ -18,7 +18,7 @@ use crate::{
     snark_builder::rules::tx_state_transition::TxTreeStateTransitionRule,
     base_tx_circuit::{
         base_tx_primitives::transaction::CoreTransaction,
-        constants::CoreTransactionParameters,
+        constants::TransactionParameters,
         gadgets::{
             transaction::{CoreTransactionGadget, NoncedCoinBoxGadget},
             transition::MerkleTreeTransitionGadget,
@@ -28,7 +28,6 @@ use crate::{
 };
 use crate::base_tx_circuit::gadgets::bit_vector_tree::BitVectorTreeGadget;
 use std::marker::PhantomData;
-use crate::base_tx_circuit::constants::TransactionParameters;
 
 pub struct CoreTxMerkleTreeStateTransitionRuleProverData<
     ConstraintF: PrimeField,
@@ -77,7 +76,7 @@ pub struct CoreTxMerkleTreeStateTransitionRule<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
@@ -100,7 +99,7 @@ where
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>
 {
     pub fn new(
@@ -138,13 +137,13 @@ where
             || prover_data.new_mst_root.as_ref().ok_or(SynthesisError::AssignmentMissing)
         )?;
 
-        let mut mst_path_to_input_gs = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut mst_path_to_output_gs = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut output_leaves_g = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut input_leaves_index_g = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut output_leaves_index_g = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
+        let mut mst_path_to_input_gs = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut mst_path_to_output_gs = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut output_leaves_g = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut input_leaves_index_g = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut output_leaves_index_g = Vec::with_capacity(TXP::MAX_I_O_BOXES);
 
-        for i in 0..<TXP as TransactionParameters>::MAX_I_O_BOXES {
+        for i in 0..TXP::MAX_I_O_BOXES {
 
             // Check if boxes are padding
             let should_enforce_input_i = Boolean::and(
@@ -240,7 +239,7 @@ where
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;
@@ -259,7 +258,7 @@ where
     ) -> Result<(), SynthesisError> {
 
         let mut curr_mst_root_g = prev_root;
-        for i in 0..<TXP as TransactionParameters>::MAX_I_O_BOXES {
+        for i in 0..TXP::MAX_I_O_BOXES {
 
             // Check if boxes are padding
             let should_enforce_input_i = Boolean::and(
@@ -362,7 +361,7 @@ pub struct CoreTxBVTStateTransitionRule<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
@@ -379,7 +378,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     pub fn new(
@@ -414,12 +413,12 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTxBVTStateTransitionRule<Constrai
             || prover_data.new_bvt_root.as_ref().ok_or(SynthesisError::AssignmentMissing)
         )?;
 
-        let mut bvt_path_to_input_gs = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut bvt_path_to_output_gs = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut prev_bvt_input_leaves_g = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
-        let mut prev_bvt_output_leaves_g = Vec::with_capacity(<TXP as TransactionParameters>::MAX_I_O_BOXES);
+        let mut bvt_path_to_input_gs = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut bvt_path_to_output_gs = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut prev_bvt_input_leaves_g = Vec::with_capacity(TXP::MAX_I_O_BOXES);
+        let mut prev_bvt_output_leaves_g = Vec::with_capacity(TXP::MAX_I_O_BOXES);
 
-        for i in 0..<TXP as TransactionParameters>::MAX_I_O_BOXES {
+        for i in 0..TXP::MAX_I_O_BOXES {
 
             // Alloc merkle paths
             let bvt_path_to_input_i_g = <Self as TxTreeStateTransitionRule<ConstraintF, H, HG, MHTP>>::MerklePathGadget::alloc(
@@ -478,7 +477,7 @@ CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type MerklePathGadget = FieldBasedBinaryMerkleTreePathGadget<MHTP, HG, ConstraintF>;
@@ -498,7 +497,7 @@ CoreTxBVTStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>
 
         let mut curr_bvt_root_g = prev_root;
 
-        for i in 0..<TXP as TransactionParameters>::MAX_I_O_BOXES {
+        for i in 0..TXP::MAX_I_O_BOXES {
 
             // Check if boxes are padding
             let should_enforce_input_i = Boolean::and(

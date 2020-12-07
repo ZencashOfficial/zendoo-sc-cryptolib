@@ -24,14 +24,13 @@ use r1cs_crypto::{FieldBasedHashGadget, signature::schnorr::field_based_schnorr:
 }, FieldHasherGadget, FieldBasedSigGadget};
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::{
-        CoinBox, NoncedCoinBox, CoreTransaction,
+        CoinBox, NoncedCoinBox, CoreTransaction, InputCoinBox, OutputCoinBox
     },
-    constants::CoreTransactionParameters,
+    constants::TransactionParameters,
 };
 use std::{
     borrow::Borrow, marker::PhantomData,
 };
-use crate::base_tx_circuit::constants::TransactionParameters;
 
 pub struct CoinBoxGadget<
     ConstraintF: PrimeField,
@@ -611,7 +610,7 @@ pub struct CoreTransactionGadget<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    P: CoreTransactionParameters<ConstraintF, G>,
+    P: TransactionParameters,
 >
 {
     /// Coinboxes related data that we manage explicitly in the circuit
@@ -641,7 +640,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        P: CoreTransactionParameters<ConstraintF, G>,
+        P: TransactionParameters,
 {
     /// Allocate input and output boxes, and enforce a Boolean for each of them, indicating if
     /// it's a padding box or not.
@@ -678,17 +677,17 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             )
         };
 
-        let mut input_gs = Vec::with_capacity(<P as TransactionParameters>::MAX_I_O_BOXES);
-        let mut output_gs = Vec::with_capacity(<P as TransactionParameters>::MAX_I_O_BOXES);
+        let mut input_gs = Vec::with_capacity(P::MAX_I_O_BOXES);
+        let mut output_gs = Vec::with_capacity(P::MAX_I_O_BOXES);
 
         let padding_input_box_g = NoncedCoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
             cs.ns(|| "hardcode padding input box"),
-            &(P::PADDING_INPUT_BOX.box_)
+            &(InputCoinBox::<ConstraintF, G>::default().box_)
         );
 
         let padding_output_box_g = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::from_value(
             cs.ns(|| "hardcode padding output box"),
-            &(P::PADDING_OUTPUT_BOX)
+            &(OutputCoinBox::<ConstraintF, G>::default())
         );
 
         // Alloc input and output boxes that must be exactly `MAX_I_O_BOXES`
@@ -718,7 +717,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             Ok(())
         }).collect::<Result<(), SynthesisError>>()?;
 
-        assert_eq!(input_gs.len(), <P as TransactionParameters>::MAX_I_O_BOXES);
+        assert_eq!(input_gs.len(), P::MAX_I_O_BOXES);
 
         outputs?.into_iter().enumerate().map(|(i, output)|{
             let output_g = CoinBoxGadget::<ConstraintF, G, GG, H, HG>::alloc(
@@ -739,7 +738,7 @@ impl<ConstraintF, G, GG, H, HG, P> AllocGadget<CoreTransaction<ConstraintF, G, H
             Ok(())
         }).collect::<Result<(), SynthesisError>>()?;
 
-        assert_eq!(output_gs.len(), <P as TransactionParameters>::MAX_I_O_BOXES);
+        assert_eq!(output_gs.len(), P::MAX_I_O_BOXES);
 
         // Alloc fee by first allocating the u64 bits and then safely packing them into a field element
         let fee = {
@@ -803,7 +802,7 @@ impl<ConstraintF, G, GG, H, HG, P> CoreTransactionGadget<ConstraintF, G, GG, H, 
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        P: CoreTransactionParameters<ConstraintF, G>,
+        P: TransactionParameters,
 {
     pub fn enforce_tx_hash_without_nonces<CS: ConstraintSystem<ConstraintF>>(
         &mut self,
@@ -967,7 +966,7 @@ for CoreTransactionGadget<ConstraintF, G, GG, H, HG, P>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        P: CoreTransactionParameters<ConstraintF, G>,
+        P: TransactionParameters,
 {
     /// PREREQUISITES: `message_to_sign` already enforced
     fn enforce_hash<CS: ConstraintSystem<ConstraintF>>(

@@ -17,7 +17,7 @@ use r1cs_crypto::FieldBasedHashGadget;
 use crate::base_tx_circuit::{
     base_tx_primitives::transaction::CoreTransaction,
     gadgets::transaction::CoreTransactionGadget,
-    constants::CoreTransactionParameters,
+    constants::TransactionParameters,
 };
 use crate::snark_builder::rules::{
     tx_state_transition::core::{
@@ -29,7 +29,6 @@ use crate::snark_builder::rules::{
 };
 use crate::{TransactionCircuit, CoinTransactionCircuit};
 use std::marker::PhantomData;
-use crate::base_tx_circuit::constants::TransactionParameters;
 
 /// Base proof of transition for a single payment transaction, able to contain more than on
 /// input/output coin box. The approach is to sequentially enforce one input/output transition
@@ -40,7 +39,7 @@ pub struct CoreTransactionCircuit<
     GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
     H: FieldBasedHash<Data = ConstraintF>,
     HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-    TXP: CoreTransactionParameters<ConstraintF, G>,
+    TXP: TransactionParameters,
     MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
@@ -70,7 +69,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTransactionCircuit<ConstraintF, G
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     pub fn new(max_tx: usize) -> Self {
@@ -158,8 +157,8 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTransactionCircuit<ConstraintF, G
         new_mst_root:             Option<MHTP::Data>,
     ) -> &mut Self
     {
-        assert_eq!(mst_paths_to_inputs.len(), <TXP as TransactionParameters>::MAX_I_O_BOXES);
-        assert_eq!(mst_paths_to_outputs.len(), <TXP as TransactionParameters>::MAX_I_O_BOXES);
+        assert_eq!(mst_paths_to_inputs.len(), TXP::MAX_I_O_BOXES);
+        assert_eq!(mst_paths_to_outputs.len(), TXP::MAX_I_O_BOXES);
 
         let rule = CoreTxMerkleTreeStateTransitionRuleProverData::<ConstraintF, H, MHTP>::new(
             mst_paths_to_inputs, mst_paths_to_outputs, prev_mst_root, new_mst_root
@@ -178,10 +177,10 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> CoreTransactionCircuit<ConstraintF, G
         new_bvt_root:             Option<MHTP::Data>,
     ) -> &mut Self
     {
-        assert_eq!(bvt_paths_to_inputs.len(), <TXP as TransactionParameters>::MAX_I_O_BOXES);
-        assert_eq!(bvt_paths_to_outputs.len(), <TXP as TransactionParameters>::MAX_I_O_BOXES);
-        assert_eq!(prev_bvt_input_leaves.len(), <TXP as TransactionParameters>::MAX_I_O_BOXES);
-        assert_eq!(prev_bvt_output_leaves.len(), <TXP as TransactionParameters>::MAX_I_O_BOXES);
+        assert_eq!(bvt_paths_to_inputs.len(), TXP::MAX_I_O_BOXES);
+        assert_eq!(bvt_paths_to_outputs.len(), TXP::MAX_I_O_BOXES);
+        assert_eq!(prev_bvt_input_leaves.len(), TXP::MAX_I_O_BOXES);
+        assert_eq!(prev_bvt_output_leaves.len(), TXP::MAX_I_O_BOXES);
         let rule = CoreTxBVTStateTransitionRuleProverData::<ConstraintF, H, MHTP>::new(
             bvt_paths_to_inputs, prev_bvt_input_leaves, bvt_paths_to_outputs, prev_bvt_output_leaves,
             prev_bvt_root, new_bvt_root
@@ -198,7 +197,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     fn generate_constraints<CS: ConstraintSystem<ConstraintF>>(self, cs: &mut CS) -> Result<(), SynthesisError>
@@ -227,7 +226,7 @@ impl<ConstraintF, G, GG, H, HG, TXP, MHTP> ConstraintSynthesizer<ConstraintF> fo
 
                 fee_g.enforce_equal(cs.ns(|| "public input fee == tx_pay.fee"), &tx_pay_g.fee)?;
 
-                debug_assert!(tx_pay_g.inputs.len() == <TXP as TransactionParameters>::MAX_I_O_BOXES);
+                debug_assert!(tx_pay_g.inputs.len() == TXP::MAX_I_O_BOXES);
                 debug_assert!(tx_pay_g.inputs.len() == tx_pay_g.outputs.len());
 
                 // We need to enforce there is at least one input box
@@ -297,7 +296,7 @@ for CoreTransactionCircuit<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type InTreeRule = CoreTxInTreeRule<ConstraintF, G, GG, H, HG, TXP, MHTP>;
@@ -312,7 +311,7 @@ for CoreTransactionCircuit<ConstraintF, G, GG, H, HG, TXP, MHTP>
         GG: GroupGadget<G, ConstraintF, Value = G> + ToConstraintFieldGadget<ConstraintF, FieldGadget = FpGadget<ConstraintF>>,
         H: FieldBasedHash<Data = ConstraintF>,
         HG: FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
-        TXP: CoreTransactionParameters<ConstraintF, G>,
+        TXP: TransactionParameters,
         MHTP: FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 {
     type StateUpdateRule = CoreTxMerkleTreeStateTransitionRule<ConstraintF, G, GG, H, HG, TXP, MHTP>;
