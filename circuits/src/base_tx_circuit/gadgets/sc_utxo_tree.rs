@@ -124,7 +124,7 @@ mod test {
         test_constraint_system::TestConstraintSystem
     };
     use r1cs_crypto::{
-        field_based_mht::FieldBasedMerkleTreePathGadget,
+        merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget,
         crh::mnt4753::MNT4PoseidonHashGadget,
     };
     use r1cs_core::ConstraintSystem;
@@ -144,7 +144,7 @@ mod test {
     type TestSMT = BigMerkleTree<TestMerkleTreeParameters>;
     type TestSMTGadget = SCUtxoTreeGadget<TestMerkleTreeParameters, MNT4PoseidonHashGadget, Fr>;
 
-    type TestSMTPathGadget = FieldBasedMerkleTreePathGadget<TestMerkleTreeParameters, MNT4PoseidonHashGadget, Fr>;
+    type TestSMTPathGadget = FieldBasedBinaryMerkleTreePathGadget<TestMerkleTreeParameters, MNT4PoseidonHashGadget, Fr>;
 
     fn leaf_to_index(leaf: &Fr, height: usize) -> usize {
 

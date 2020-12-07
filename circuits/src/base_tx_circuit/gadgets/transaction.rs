@@ -1,4 +1,7 @@
-use algebra::{PrimeField, ToConstraintField, ProjectiveCurve, ToBytes, to_bytes, FromBytes};
+use algebra::{
+    fields::FpParameters,
+    PrimeField, ToConstraintField, ProjectiveCurve,
+    ToBytes, to_bytes, FromBytes};
 use primitives::FieldBasedHash;
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::{
@@ -480,9 +483,19 @@ impl<ConstraintF, G, GG, H, HG> NoncedCoinBoxGadget<ConstraintF, G, GG, H, HG>
         box_index: FpGadget<ConstraintF>, //Note: it can be surely hardcoded in the circuit
     ) -> Result<HG::DataGadget, SynthesisError>
     {
-        HG::check_evaluation_gadget(
+        let nonce_g = HG::check_evaluation_gadget(
             cs.ns(|| "enforce box nonce"),
             &[tx_hash_without_nonces, box_index]
+        )?;
+
+        let nonce_bits = nonce_g.to_bits_with_length_restriction(
+            cs.ns(|| "nonce_to_bits"),
+            (ConstraintF::Params::MODULUS_BITS as usize) - 64
+        )?;
+
+        FpGadget::<ConstraintF>::from_bits(
+            cs.ns(|| "nonce = ConstraintF::read(nonce_bits[..64])"),
+            nonce_bits.as_slice()
         )
     }
 
