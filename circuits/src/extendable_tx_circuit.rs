@@ -42,13 +42,12 @@ for CoreTxStatesWrapper<ConstraintF> {
     }
 }
 
-//TODO: I'm not sure all the templates are fine, e.g. here for instance you limit all the txs
-//      to have the same merkle parameters, same hash function and same signature.
-//      probably, to give more freedom, it would be useful to remove all the templates
-//      (except ConstraintF), and maybe keep them only in the base traits( Box/BoxGaget,
-//      Transaction/TransactionGadget ), even if also there may be limiting, e.g. if one wants
-//      to have a transaction containing different boxes with different signature algorithms.
-//      OR remove all the templates and goodnight.
+//TODO: Templates are here actually only for CoinBox related stuff that each transaction
+//      must share: this doesn't mean that each transaction can have its own signatures/
+//      hashes/merkle trees. Since it's unlikely that we will change the CoinBox logic
+//      it's the same if we remove the templates anyway, leading to more readable and
+//      easy code (if we use type aliases like in ginger_calls.rs, even if we change
+//      something, it will be easy to adapt, so we won't lose much generality anyway)
 pub struct ExtendableTransactionCircuit<
     ConstraintF: Field,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
