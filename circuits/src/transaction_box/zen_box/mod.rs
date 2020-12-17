@@ -1,27 +1,27 @@
 use crate::transaction_box::base_coin_box::BaseCoinBox;
 use algebra::PrimeField;
-use primitives::{FieldBasedSignatureScheme, FieldBasedMerkleTreePath};
+use primitives::{FieldBasedSignatureScheme, FieldBasedMerkleTreePath, FieldBasedMerkleTreeParameters};
 
 pub mod constraints;
 
 pub struct ZenBox<
     F: PrimeField,
     S: FieldBasedSignatureScheme<Data = F>,
-    MHTP: FieldBasedMerkleTreePath
+    P: FieldBasedMerkleTreeParameters<Data = F>,
 >
 {
-    coin_box: BaseCoinBox<F, S, MHTP>
-    // Other fields
+    coin_box: BaseCoinBox<F, S, P>
+    // Other fields ?
 }
 
 pub struct InputZenBox<
     F: PrimeField,
     S: FieldBasedSignatureScheme<Data = F>,
-    MHTP: FieldBasedMerkleTreePath
+    P: FieldBasedMerkleTreeParameters<Data = F>,
 >
 {
-    zen_box: ZenBox<F, S, MHTP>,
+    zen_box: ZenBox<F, S, P>,
     sig:     S::Signature,
 }
 
-pub type OutputZenBox<F, S, MHTP> = ZenBox<F, S, MHTP>;
+pub type OutputZenBox<F, S, P> = ZenBox<F, S, P>;

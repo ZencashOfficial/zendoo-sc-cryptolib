@@ -10,13 +10,13 @@ pub struct ZenBoxGadget<
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
     SG:          FieldBasedSigGadget<S, ConstraintF>,
-    MHTP:        FieldBasedMerkleTreePath<H = H, Parameters = P>,
-    MHTPG:       FieldBasedMerkleTreePathGadget<P, H, HG, ConstraintF>,
 >
 {
-    pub coin_box: BaseCoinBoxGadget<ConstraintF, P, H, HG, MHTP, S, SG, MHTPG>
-    // Other fields
+    pub coin_box: BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
+    // Other fields ?
 }
+
+//TODO: Impl TransactionBoxGadget also for ZenBoxGadget (means implementing AllocGadget, HardcodeGadget and EqGadget)
 
 pub struct InputZenBoxGadget<
     ConstraintF: Field,
@@ -25,11 +25,9 @@ pub struct InputZenBoxGadget<
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
     SG:          FieldBasedSigGadget<S, ConstraintF>,
-    MHTP:        FieldBasedMerkleTreePath<H = H, Parameters = P>,
-    MHTPG:       FieldBasedMerkleTreePathGadget<P, H, HG, ConstraintF>,
 > {
-    pub zen_box: ZenBoxGadget<ConstraintF, P, H, HG, MHTP, S, SG, MHTPG>,
+    pub zen_box: ZenBoxGadget<ConstraintF, P, H, HG, S, SG>,
     pub sig:     SG::SignatureGadget,
 }
 
-pub type OutputZenBoxGadget<ConstraintF, P, H, HG, MHTP, S, SG, MHTPG> = ZenBoxGadget<ConstraintF, P, H, HG, MHTP, S, SG, MHTPG>;
+pub type OutputZenBoxGadget<ConstraintF, P, H, HG, S, SG> = ZenBoxGadget<ConstraintF, P, H, HG, S, SG>;

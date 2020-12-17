@@ -10,7 +10,7 @@ use serde::{Serialize, Deserialize};
 pub struct BaseCoinBox<
     F: PrimeField,
     S: FieldBasedSignatureScheme<Data = F>,
-    MHTP: FieldBasedMerkleTreePath
+    P: FieldBasedMerkleTreeParameters<Data = F>,
 >
 {
     pub amount: u64,
@@ -18,7 +18,7 @@ pub struct BaseCoinBox<
     pub nonce: u64,
     pub id: F,
     pub custom_hash: F,
-    pub mst_path: MHTP,
-    pub bvt_path: MHTP,
+    pub mst_path: FieldBasedBinaryMHTPath<P>,
+    pub bvt_path: FieldBasedBinaryMHTPath<P>,
     pub bvt_leaf: F,
 }
