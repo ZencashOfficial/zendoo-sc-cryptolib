@@ -25,14 +25,15 @@ pub struct BaseCoinBoxGadget<
     SG:          FieldBasedSigGadget<S, ConstraintF>,
 >
 {
-    amount:      FpGadget<ConstraintF>,
-    pk:          SG::PublicKeyGadget,
-    nonce:       FpGadget<ConstraintF>,
-    id:          FpGadget<ConstraintF>,
-    custom_hash: FpGadget<ConstraintF>,
-    mst_path:	 FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF>,
-    bvt_path:	 FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF>,
-    bvt_leaf:	 FpGadget<ConstraintF>,
+    pub amount:      FpGadget<ConstraintF>,
+    pub pk:          SG::PublicKeyGadget,
+    pub nonce:       FpGadget<ConstraintF>,
+    pub id:          FpGadget<ConstraintF>,
+    pub custom_hash: FpGadget<ConstraintF>,
+    pub mst_path:	 FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF>,
+    pub bvt_path:	 FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF>,
+    pub bvt_leaf:	 FpGadget<ConstraintF>,
+    pub is_phantom:  Boolean,
 }
 
 //TODO: The getters won't return a cloned value, but return a reference. Rust smart pointers
@@ -46,9 +47,9 @@ where
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
     SG:          FieldBasedSigGadget<S, ConstraintF>,
 {
-    fn get_path_in_mst(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.mst_path.clone(); }
-    fn get_path_in_bvt(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.bvt_path.clone(); }
-    fn get_leaf_val_in_bvt(&self) -> FpGadget<ConstraintF> { return self.bvt_leaf.clone(); }
+    pub fn get_path_in_mst(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.mst_path.clone(); }
+    pub fn get_path_in_bvt(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.bvt_path.clone(); }
+    pub fn get_leaf_val_in_bvt(&self) -> FpGadget<ConstraintF> { return self.bvt_leaf.clone(); }
 }
 
 impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox<ConstraintF, S, P>>
@@ -60,7 +61,11 @@ impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
         SG:          FieldBasedSigGadget<S, ConstraintF>,
-{}
+{
+    fn is_phantom(&self) -> Boolean {
+        self.is_phantom.clone()
+    }
+}
 
 impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, ConstraintF>
     for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
@@ -165,7 +170,14 @@ impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, C
             || bvt_leaf
         )?;
 
-        Ok( Self { amount, pk, nonce, id, custom_hash, mst_path, bvt_path, bvt_leaf } )
+        let mut new_instance = Self {
+            amount, pk, nonce, id, custom_hash, mst_path, bvt_path, bvt_leaf, is_phantom: Boolean::Constant(false)
+        };
+        let phantom_self = Self::get_phantom(cs.ns(|| "hardcode phantom box"));
+        let is_phantom = new_instance.is_eq(cs.ns(|| "is phantom"), &phantom_self)?;
+        new_instance.is_phantom = is_phantom;
+
+        Ok(new_instance)
     }
 
     fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(cs: CS, f: F) -> Result<Self, SynthesisError>

@@ -3,6 +3,7 @@ use algebra::Field;
 use r1cs_std::alloc::{AllocGadget, ConstantGadget, eq::EqGadget};
 use r1cs_core::ConstraintSystem;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
+use r1cs_std::bits::boolean::Boolean;
 
 pub trait TransactionBoxGadget<ConstraintF: Field, B: TransactionBox>:
     // We need to be able to allocate a Box in the circuit
@@ -20,4 +21,6 @@ pub trait TransactionBoxGadget<ConstraintF: Field, B: TransactionBox>:
         let phantom_box = B::default();
         <Self as ConstantGadget<B, ConstraintF>>::from_value(cs, &phantom_box)
     }
+
+    fn is_phantom(&self) -> Boolean;
 }

@@ -10,6 +10,8 @@ use r1cs_std::alloc::AllocGadget;
 use crate::transaction::constraints::TransactionGadget;
 use crate::transaction_box::base_coin_box::constraints::BaseCoinBoxGadget;
 use r1cs_crypto::merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget;
+use r1cs_std::bits::boolean::Boolean;
+use std::marker::PhantomData;
 
 pub struct CoreTransactionProverDataGadget<
     ConstraintF: Field,
@@ -27,7 +29,7 @@ pub struct CoreTransactionProverDataGadget<
     next_bvt_root:      FpGadget<ConstraintF>,
     bvt_batch_size:		usize,
 
-    _hash: PhantomData<H>,
+    _hash:              PhantomData<H>,
 }
 
 //TODO: Implement TransactionProverDataGadget trait for CoreTransactionProverDataGadget
@@ -51,6 +53,7 @@ pub struct CoreTransactionGadget<
     prover_data_g:					                    CoreTransactionProverDataGadget<ConstraintF, P, H, HG>,
     tx_hash_without_nonces_g: 				            FpGadget<ConstraintF>,
     tx_hash_g:							                FpGadget<ConstraintF>,
+    is_phantom:                                         Boolean,
 }
 
 impl<ConstraintF, P, H, HG, S, SG> CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
@@ -201,6 +204,10 @@ for CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
         self.tx_hash_g.clone()
     }
 
+    fn is_phantom(&self) -> Boolean {
+        self.is_phantom.clone()
+    }
+
     fn get_txs_tree_tx_path(&self) -> MHTPG {
         self.prover_data_g.txs_tree_tx_path.clone()
     }
@@ -227,6 +234,10 @@ for CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
 
     fn get_next_bvt_root(&self) -> FpGadget<ConstraintF> {
         self.prover_data_g.next_bvt_root.clone()
+    }
+
+    fn get_bvt_batch_size(&self) -> usize {
+        self.prover_data_g.bvt_batch_size
     }
 }
 
@@ -292,7 +303,7 @@ impl<ConstraintF, P, H, HG, S, SG> FromGadget<CoreTransactionProverData<Constrai
             tx_hash_without_nonces_g.clone(),
         )?;
 
-        Self {
+        let mut new_instance = Self {
             input_gs,
             output_gs,
             fee_g,
@@ -301,8 +312,18 @@ impl<ConstraintF, P, H, HG, S, SG> FromGadget<CoreTransactionProverData<Constrai
             non_coin_boxes_output_data_cumulative_hash_g,
             prover_data_g,
             tx_hash_without_nonces_g,
-            tx_hash_g
-        }
+            tx_hash_g,
+            is_phantom: Boolean::Constant(false),
+        };
+
+        let phantom_tx = Self::get_phantom(cs.ns(|| "hardcode phantom tx"));
+        let is_phantom = new_instance.is_eq(
+            cs.ns(|| "is phantom"),
+            &phantom_tx
+        )?;
+        new_instance.is_phantom = is_phantom;
+
+        Ok(new_instance)
     }
 }
 

@@ -21,7 +21,7 @@ pub struct CoreTransaction<
     pub non_coin_boxes_output_data_cumulative_hash: F,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CoreTransactionProverData<
     F: PrimeField,
     S: FieldBasedSignatureScheme<Data = F>,

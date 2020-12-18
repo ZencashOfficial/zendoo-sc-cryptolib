@@ -13,7 +13,13 @@ use primitives::{FieldBasedMerkleTreePath, FieldBasedHash, FieldBasedSignatureSc
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget, FieldBasedMerkleTreePathGadget};
 use r1cs_std::FromGadget;
 use r1cs_crypto::merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget;
+use crate::rules::boxes_state_transitions::BoxesStateTransitionGadget;
+use crate::rules::tx_balance::TransactionBalanceGadget;
+use crate::rules::tx_in_tree::TransactionInTreeGadget;
+use crate::rules::tx_signatures::TransactionSignaturesGadget;
 
+//TODO: The getters won't return a cloned value, but return a reference. Rust smart pointers
+//      like Rc or Cow are good for this purpose.
 pub trait TransactionGadget<
     ConstraintF: Field,
     T:           Transaction,
@@ -38,10 +44,11 @@ pub trait TransactionGadget<
     fn get_pks(&self) -> Vec<SG::PublicKeyGadget>;
     fn get_message_to_sign(&self) -> FpGadget<ConstraintF>;
     fn get_tx_hash(&self) -> FpGadget<ConstraintF>;
-    fn get_phantom<CS: ConstraintSystem<ConstraintF>>() -> Self {
+    fn get_phantom<CS: ConstraintSystem<ConstraintF>>(cs: CS) -> Self {
         let phantom_tx = T::default();
         <Self as ConstantGadget<T, ConstraintF>>::from_value(cs, &phantom_tx)
     }
+    fn is_phantom(&self) -> Boolean;
 
     // These functions are generic enough to be put in TransactionGadget. Otherwise, we
     // can always make a trait, let TransactionGadget implement it, and templatize the
@@ -53,6 +60,7 @@ pub trait TransactionGadget<
     fn get_next_mst_root(&self) -> FpGadget<ConstraintF>;
     fn get_prev_bvt_root(&self) -> FpGadget<ConstraintF>;
     fn get_next_bvt_root(&self) -> FpGadget<ConstraintF>;
+    fn get_bvt_batch_size(&self) -> usize;
 
     fn conditionally_enforce<CS: ConstraintSystem<ConstraintF>>(
         &self,
@@ -60,25 +68,26 @@ pub trait TransactionGadget<
         should_enforce: &Boolean,
     ) -> Result<(), SynthesisError> where Self: Sized
     {
+        let should_enforce = self.is_phantom();
 
         // Enforce correct balance
-        TxBalanceGadget::conditionally_enforce_balance(
-            cs.ns(|| "enforce balance"), self, should_enforce
+        TransactionBalanceGadget::conditionally_enforce_balance(
+            cs.ns(|| "enforce balance"), self, &should_enforce
         )?;
 
         // Enforce correct input signatures
-        TxSignaturesGadget::conditionally_enforce_signatures(
-            cs.ns(|| "enforce signatures"), self, should_enforce
+        TransactionSignaturesGadget::conditionally_enforce_signatures_verification(
+            cs.ns(|| "enforce signatures"), self, &should_enforce
         )?;
 
         // Enforce tx hash belongs in block tx tree
-        TxInTreeGadget::enforce_append_tx_in_tree(
-            cs.ns(|| "enforce tx in tree"), self, should_enforce
+        TransactionInTreeGadget::enforce_tx_in_tree(
+            cs.ns(|| "enforce tx in tree"), self, &should_enforce
         )?;
 
         // Enforce MST and BVT transition for input and output boxes
         BoxesStateTransitionGadget::enforce_state_transition(
-            cs.ns(|| "enforce mst and bvt state transition"), self, should_enforce
+            cs.ns(|| "enforce mst and bvt state transition"), self, &should_enforce
         )?;
 
         Ok(())
