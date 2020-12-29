@@ -1,10 +1,10 @@
 use crate::transaction_box::base_coin_box::constraints::BaseCoinBoxGadget;
-use algebra::Field;
+use algebra::PrimeField;
 use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreePath};
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget, FieldBasedMerkleTreePathGadget};
 
 pub struct ZenBoxGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -19,7 +19,7 @@ pub struct ZenBoxGadget<
 //TODO: Impl TransactionBoxGadget also for ZenBoxGadget (means implementing AllocGadget, HardcodeGadget and EqGadget)
 
 pub struct InputZenBoxGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,

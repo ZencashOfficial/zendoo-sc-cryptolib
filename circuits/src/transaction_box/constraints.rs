@@ -1,11 +1,14 @@
-use crate::TransactionBox;
-use algebra::Field;
-use r1cs_std::alloc::{AllocGadget, ConstantGadget, eq::EqGadget};
+use crate::transaction_box::TransactionBox;
+use algebra::PrimeField;
+use r1cs_std::alloc::{AllocGadget, ConstantGadget};
+use r1cs_std::eq::EqGadget;
 use r1cs_core::ConstraintSystem;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::bits::boolean::Boolean;
 
-pub trait TransactionBoxGadget<ConstraintF: Field, B: TransactionBox>:
+// TODO: GINGER: ToConstraintFieldGadget<Field>: the trait `algebra::PrimeField` is not implemented for `Field`
+// So using PrimeField instead of Field for the ConstraintF
+pub trait TransactionBoxGadget<ConstraintF: PrimeField, B: TransactionBox>:
     // We need to be able to allocate a Box in the circuit
     AllocGadget<B, ConstraintF> +
     // May be needed to hardcode a phantom box in the circuit

@@ -1,4 +1,4 @@
-use algebra::{Field, Group};
+use algebra::{PrimeField, Group, ToBytes};
 use r1cs_std::groups::GroupGadget;
 use r1cs_crypto::{FieldBasedMerkleTreePathGadget, FieldBasedHashGadget, FieldBasedSigGadget};
 use primitives::{FieldBasedMerkleTreePath, FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreeParameters};
@@ -14,10 +14,11 @@ use r1cs_std::bits::boolean::Boolean;
 use crate::transaction_box::constraints::TransactionBoxGadget;
 use r1cs_crypto::merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGadget;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
+use std::borrow::Borrow;
 
 //TODO: Add missing fields ? (sync with actual SDK)
 pub struct BaseCoinBoxGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -40,8 +41,8 @@ pub struct BaseCoinBoxGadget<
 //      like Rc or Cow are good for this purpose.
 impl<ConstraintF, P, H, HG, S, SG> BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
 where
-    ConstraintF: Field,
-    P:           FieldBasedMerkleTreePath<H = H>,
+    ConstraintF: PrimeField,
+    P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
@@ -52,10 +53,11 @@ where
     pub fn get_leaf_val_in_bvt(&self) -> FpGadget<ConstraintF> { return self.bvt_leaf.clone(); }
 }
 
+// TODO: GINGER: Default is not implemented for FieldBasedMerkleTreeParameters and FieldBasedSignatureScheme
 impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox<ConstraintF, S, P>>
     for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -70,7 +72,7 @@ impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox
 impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, ConstraintF>
     for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -133,7 +135,7 @@ impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, C
         //       a field element.
         let nonce = FpGadget::<ConstraintF>::from_bits(
             cs.ns(|| "nonce to field gadget"),
-            amount_bits.to_bits_le().as_slice()
+            nonce_bits.to_bits_le().as_slice()
         )?;
 
         // It's safe to not perform any check when allocating the pks, considering that they
@@ -192,14 +194,14 @@ impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, C
 impl<ConstraintF, P, H, HG, S, SG> ConstantGadget<BaseCoinBox<ConstraintF, S, P>, ConstraintF>
 for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
         SG:          FieldBasedSigGadget<S, ConstraintF>,
 {
-    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &BaseCoinBox<ConstraintF, S, MHTP>) -> Self {
+    fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &BaseCoinBox<ConstraintF, S, P>) -> Self {
 
         let amount = FpGadget::<ConstraintF>::from_value(
             &mut cs.ns(|| "hardcode amount as field gadget"),
@@ -244,26 +246,26 @@ for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
             &value.bvt_leaf
         );
 
-        Ok( Self { amount, pk, nonce, id, custom_hash, mst_path, bvt_path, bvt_leaf } )
+        Self { amount, pk, nonce, id, custom_hash, mst_path, bvt_path, bvt_leaf, is_phantom: Boolean::Constant(false) }
     }
 
-    fn get_constant(&self) -> BaseCoinBox<ConstraintF, S, MHTP> {
-        Self {
+    fn get_constant(&self) -> BaseCoinBox<ConstraintF, S, P> {
+        BaseCoinBox {
             amount: self.amount.value.unwrap(),
-            pk: self.pk.get_constant().unwrap(), // To be implemented in Ginger
+            pk: self.pk.get_constant().unwrap(), // TODO: To be implemented in Ginger
             nonce: self.nonce.value.unwrap(),
             id: self.id.value.unwrap(),
             custom_hash: self.custom_hash.value.unwrap(),
-            mst_path: self.mst_path.get_constant().unwrap(), // To be implemented in Ginger
-            bvt_path: self.bvt_path.get_constant().unwrap(), // To be implemented in Ginger
-            bvt_leaf: self.bvt_leaf.value.unwrap(),
+            mst_path: self.mst_path.get_constant().unwrap(), // TODO: To be implemented in Ginger
+            bvt_path: self.bvt_path.get_constant().unwrap(), // TODO: To be implemented in Ginger
+            bvt_leaf: self.bvt_leaf.value.unwrap()
         }
     }
 }
 
 impl<ConstraintF, P, H, HG, S, SG> Eq for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -273,7 +275,7 @@ impl<ConstraintF, P, H, HG, S, SG> Eq for BaseCoinBoxGadget<ConstraintF, P, H, H
 
 impl<ConstraintF, P, H, HG, S, SG> PartialEq for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -294,7 +296,7 @@ impl<ConstraintF, P, H, HG, S, SG> PartialEq for BaseCoinBoxGadget<ConstraintF, 
 
 impl<ConstraintF, P, H, HG, S, SG> EqGadget<ConstraintF> for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -342,7 +344,7 @@ impl<ConstraintF, P, H, HG, S, SG> EqGadget<ConstraintF> for BaseCoinBoxGadget<C
 
 impl<ConstraintF, P, H, HG, S, SG> ToConstraintFieldGadget<ConstraintF> for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
@@ -358,7 +360,7 @@ impl<ConstraintF, P, H, HG, S, SG> ToConstraintFieldGadget<ConstraintF> for Base
         let mut self_as_fe = vec![self.amount.clone()];
         let pk_as_fe = self.pk.to_field_gadget_elements(cs)?;
         self_as_fe.extend_from_slice(pk_as_fe.as_slice());
-        self_as_fe.push(custom_hash);
-        self_as_fe
+        self_as_fe.push(self.custom_hash.clone());
+        Ok(self_as_fe)
     }
 }

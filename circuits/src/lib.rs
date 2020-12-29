@@ -10,11 +10,16 @@
     stable_features,
     unreachable_pub
 )]
+// #![deny(
+//     non_shorthand_field_patterns,
+//     unused_attributes,
+//     unused_imports,
+//     unused_extern_crates
+// )]
 #![deny(
-    non_shorthand_field_patterns,
-    unused_attributes,
-    unused_imports,
-    unused_extern_crates
+non_shorthand_field_patterns,
+unused_attributes,
+unused_extern_crates
 )]
 #![deny(
     renamed_and_removed_lints,
@@ -33,19 +38,34 @@
 )]
 #![forbid(unsafe_code)]
 
+#[macro_use]
+extern crate algebra;
+
+pub mod demo_circuit;
+
+// Fixing modules sequentially to not get lost among errors, so some of them are detached by commenting
+
 pub mod base_gadgets;
-pub use self::base_tx_circuit::*;
+// pub use self::base_tx_circuit::*;
+
+// pub mod base_tx_circuit;
+// pub use self::base_tx_circuit::*;
+
+// pub mod snark_builder;
+// pub use self::snark_builder::*;
 
 pub mod transaction_box;
-pub use self::transaction_box::*;
+// pub use self::transaction_box::*;
+//
+//
+// pub mod rules;
+// pub use self::rules::*;
+//
+//
+// pub mod transaction;
+// pub use self::transaction::*;
+//
+// pub mod extendable_tx_circuit;
 
-pub mod rules;
-pub use self::rules::*;
-
-pub mod transaction;
-pub use self::transaction::*;
-
-pub mod extendable_tx_circuit;
-
-#[macro_use]
-extern crate derivative;
+// #[macro_use]
+// extern crate derivative;
