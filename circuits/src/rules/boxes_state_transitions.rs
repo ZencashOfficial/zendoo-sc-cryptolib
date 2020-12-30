@@ -1,4 +1,4 @@
-use algebra::Field;
+use algebra::PrimeField;
 use crate::{Transaction, TransactionProverData};
 use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme};
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
@@ -14,15 +14,15 @@ use crate::transaction_box::constraints::TransactionBoxGadget;
 use crate::base_gadgets::bit_vector_tree::BitVectorTreeGadget;
 
 pub struct BoxesStateTransitionGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     T:           Transaction,
     D:           TransactionProverData<T>,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
-    TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+    TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 >
 {
     _field:             PhantomData<ConstraintF>,
@@ -38,15 +38,15 @@ pub struct BoxesStateTransitionGadget<
 
 impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<ConstraintF, T, D, P, H, HG, S, SG, TG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         T:           Transaction,
         D:           TransactionProverData<T>,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
+        HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
-        TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+        TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 {
     pub fn enforce_state_transition<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -59,11 +59,11 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
 
         let null_leaf_g = FpGadget::<ConstraintF>::from_value(
             cs.ns(|| "hardcode null leaf"),
-            &P::EMPTY_HASH_CST.unwrap()[0]
+            &P::EMPTY_HASH_CST.unwrap().nodes[0]
         );
 
-        let mut curr_mst_root_g = tx_g.get_prev_mst_root();
-        let mut curr_bvt_root_g = tx_g.get_prev_bvt_root();
+        let mut curr_mst_root_g = tx_g.get_prev_mst_root().clone();
+        let mut curr_bvt_root_g = tx_g.get_prev_bvt_root().clone();
 
         for (i, (input_box_data, output_box_data))
             in input_boxes_g.iter().zip(output_boxes_g.iter()).enumerate() {
@@ -85,17 +85,17 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
                 (
                     cs.ns(|| format!("enforce mst update by removing input box {}", i)),
                     &curr_mst_root_g,
-                    &input_box_data.get_path_in_mst(),
+                    input_box_data.get_path_in_mst(),
                     &input_box_data.id,
                     &null_leaf_g,
                     &should_replace_input,
                 )?;
 
-            let curr_mst_root_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_replacement
+            curr_mst_root_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_replacement
                 (
                     cs.ns(|| format!("enforce mst update by adding output box {}", i)),
                     &interim_mst_root_g,
-                    &output_box_data.get_path_in_mst(),
+                    output_box_data.get_path_in_mst(),
                     &null_leaf_g,
                     &output_box_data.id,
                     &should_replace_output,
@@ -105,7 +105,7 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
             let input_leaf_i_index_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_index
                 (
                     cs.ns(|| format!("enforce correct index in mst for input_box_{}", i)),
-                    &input_box_data.get_path_in_mst(),
+                    input_box_data.get_path_in_mst(),
                     &input_box_data.id,
                     &should_replace_input,
                 )?;
@@ -114,7 +114,7 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
             let output_leaf_i_index_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_index
                 (
                     cs.ns(|| format!("enforce correct index in mst for output_box_{}", i)),
-                    &output_box_data.get_path_in_mst(),
+                    output_box_data.get_path_in_mst(),
                     &output_box_data.id,
                     &should_replace_output,
                 )?;
@@ -123,16 +123,16 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
             let bvt_input_leaf_i_index_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_index
                 (
                     cs.ns(|| format!("enforce correct index for bvt_input_leaf_{}", i)),
-                    &input_box_data.get_path_in_bvt(),
-                    &input_box_data.get_leaf_val_in_bvt(),
+                    input_box_data.get_path_in_bvt(),
+                    input_box_data.get_leaf_val_in_bvt(),
                     &should_replace_input
                 )?;
 
             let bvt_output_leaf_i_index_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_index
                 (
                     cs.ns(|| format!("enforce correct index for bvt_output_leaf_{}", i)),
-                    &output_box_data.get_path_in_bvt(),
-                    &output_box_data.get_leaf_val_in_bvt(),
+                    output_box_data.get_path_in_bvt(),
+                    output_box_data.get_leaf_val_in_bvt(),
                     &should_replace_output
                 )?;
 
@@ -140,7 +140,7 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
             let next_bvt_input_leaf_i_g = BitVectorTreeGadget::<P, HG, ConstraintF>::conditional_enforce_bv_leaf_update
                 (
                     cs.ns(|| format!("enforce bvt_input_leaf_{} update", i)),
-                    &input_box_data.get_leaf_val_in_bvt(),
+                    input_box_data.get_leaf_val_in_bvt(),
                     &bvt_input_leaf_i_index_g,
                     &input_leaf_i_index_g,
                     tx_g.get_bvt_batch_size(),
@@ -150,7 +150,7 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
             let next_bvt_output_leaf_i_g = BitVectorTreeGadget::<P, HG, ConstraintF>::conditional_enforce_bv_leaf_update
                 (
                     cs.ns(|| format!("enforce bvt_output_leaf_{} update", i)),
-                    &output_box_data.get_leaf_val_in_bvt(),
+                    output_box_data.get_leaf_val_in_bvt(),
                     &bvt_output_leaf_i_index_g,
                     &output_leaf_i_index_g,
                     tx_g.get_bvt_batch_size(),
@@ -162,8 +162,8 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
                 (
                     cs.ns(|| format!("enforce bvt update for input_leaf_{}", i)),
                     &curr_bvt_root_g,
-                    &input_box_data.get_path_in_bvt(),
-                    &input_box_data.get_leaf_val_in_bvt(),
+                    input_box_data.get_path_in_bvt(),
+                    input_box_data.get_leaf_val_in_bvt(),
                     &next_bvt_input_leaf_i_g,
                     &should_replace_input
                 )?;
@@ -172,8 +172,8 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> BoxesStateTransitionGadget<Constrai
                 (
                     cs.ns(|| format!("enforce bvt update for output_leaf_{}", i)),
                     &interim_bvt_root_g,
-                    &output_box_data.get_path_in_bvt(),
-                    &output_box_data.get_leaf_val_in_bvt(),
+                    output_box_data.get_path_in_bvt(),
+                    output_box_data.get_leaf_val_in_bvt(),
                     &next_bvt_output_leaf_i_g,
                     &should_replace_output
                 )?;

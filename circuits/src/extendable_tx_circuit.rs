@@ -43,7 +43,7 @@ for CoreTxStatesWrapper<ConstraintF> {
 }
 
 //TODO: Templates are here actually only for CoinBox related stuff that each transaction
-//      must share: this doesn't mean that each transaction can have its own signatures/
+//      must share: this doesn't mean that each transaction can't have its own signatures/
 //      hashes/merkle trees. Since it's unlikely that we will change the CoinBox logic
 //      it's the same if we remove the templates anyway, leading to more readable and
 //      easy code (if we use type aliases like in ginger_calls.rs, even if we change

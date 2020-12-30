@@ -1,5 +1,5 @@
 use crate::transaction::constraints::TransactionGadget;
-use algebra::Field;
+use algebra::PrimeField;
 use crate::{Transaction, TransactionProverData};
 use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme};
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
@@ -12,20 +12,19 @@ use r1cs_std::{
 };
 use std::marker::PhantomData;
 use r1cs_std::eq::EqGadget;
-use crate::transaction_box::base_coin_box::constraints::BaseCoinBoxGadget;
 use crate::transaction_box::constraints::TransactionBoxGadget;
 use r1cs_std::select::CondSelectGadget;
 
 pub struct TransactionBalanceGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     T:           Transaction,
     D:           TransactionProverData<T>,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
-    TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+    TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 >
 {
     _field:             PhantomData<ConstraintF>,
@@ -41,15 +40,15 @@ pub struct TransactionBalanceGadget<
 
 impl<ConstraintF, T, D, P, H, HG, S, SG, TG> TransactionBalanceGadget<ConstraintF, T, D, P, H, HG, S, SG, TG>
 where
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     T:           Transaction,
     D:           TransactionProverData<T>,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
-    TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+    TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 {
     pub fn conditionally_enforce_balance<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -93,13 +92,13 @@ where
                 let should_enforce_output = Boolean::and(
                     cs.ns(|| format!("should_enforce_output_amount_{}", index)),
                     should_enforce,
-                    &output.is_padding.not()
+                    &output.is_phantom().not()
                 )?;
 
                 let to_add = FpGadget::<ConstraintF>::conditionally_select(
                     cs.ns(|| format!("add_output_amount_or_0_{}", index)),
                     &should_enforce_output,
-                    &output.box_.amount,
+                    &output.amount,
                     &zero,
                 )?;
 

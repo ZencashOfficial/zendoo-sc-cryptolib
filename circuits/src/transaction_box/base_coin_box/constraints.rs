@@ -1,4 +1,4 @@
-use algebra::{PrimeField, ToBytes};
+use algebra::{PrimeField, ToBytes, to_bytes};
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
 use primitives::{FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreeParameters};
 use r1cs_std::bits::uint64::UInt64;
@@ -53,9 +53,9 @@ where
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
     SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
-    pub fn get_path_in_mst(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.mst_path.clone(); }
-    pub fn get_path_in_bvt(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.bvt_path.clone(); }
-    pub fn get_leaf_val_in_bvt(&self) -> FpGadget<ConstraintF> { return self.bvt_leaf.clone(); }
+    pub fn get_path_in_mst(&self) -> &FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { &self.mst_path }
+    pub fn get_path_in_bvt(&self) -> &FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { &self.bvt_path }
+    pub fn get_leaf_val_in_bvt(&self) -> &FpGadget<ConstraintF> { &self.bvt_leaf }
 }
 
 impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox<ConstraintF, S, P>>
@@ -68,8 +68,8 @@ impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
         SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
-    fn is_phantom(&self) -> Boolean {
-        self.is_phantom.clone()
+    fn is_phantom(&self) -> &Boolean {
+        &self.is_phantom
     }
 }
 

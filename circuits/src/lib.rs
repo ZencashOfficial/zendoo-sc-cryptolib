@@ -39,7 +39,7 @@ unused_extern_crates
 #![forbid(unsafe_code)]
 
 #[macro_use]
-extern crate algebra;
+extern crate derivative;
 
 pub mod demo_circuit;
 
@@ -49,18 +49,12 @@ pub mod base_gadgets;
 pub use self::base_gadgets::*;
 
 pub mod transaction_box;
-// pub use self::transaction_box::*;
-// pub mod transaction;
-// pub use self::transaction::*;
-//
-//
-// pub mod rules;
-// pub use self::rules::*;
-//
-//
+pub use self::transaction_box::*;
 
-//
-// pub mod extendable_tx_circuit;
+pub mod transaction;
+pub use self::transaction::*;
 
-#[macro_use]
-extern crate derivative;
+pub mod rules;
+pub use self::rules::*;
+
+pub mod extendable_tx_circuit;

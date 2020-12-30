@@ -1,4 +1,4 @@
-use algebra::Field;
+use algebra::PrimeField;
 use crate::{Transaction, TransactionProverData};
 use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme};
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
@@ -12,15 +12,15 @@ use r1cs_std::alloc::ConstantGadget;
 use r1cs_std::eq::EqGadget;
 
 pub struct TransactionInTreeGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     T:           Transaction,
     D:           TransactionProverData<T>,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
-    TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+    TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 >
 {
     _field:             PhantomData<ConstraintF>,
@@ -36,15 +36,15 @@ pub struct TransactionInTreeGadget<
 
 impl<ConstraintF, T, D, P, H, HG, S, SG, TG> TransactionInTreeGadget<ConstraintF, T, D, P, H, HG, S, SG, TG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         T:           Transaction,
         D:           TransactionProverData<T>,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
+        HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
-        TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+        TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 {
     pub fn enforce_tx_in_tree<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -54,21 +54,21 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> TransactionInTreeGadget<ConstraintF
 
         let null_leaf_g = FpGadget::<ConstraintF>::from_value(
             cs.ns(|| "hardcode null leaf"),
-            &P::EMPTY_HASH_CST.unwrap()[0]
+            &P::EMPTY_HASH_CST.unwrap().nodes[0]
         );
 
         let new_tree_root_g = MerkleTreeTransitionGadget::<P, HG, ConstraintF>::conditionally_enforce_leaf_replacement(
             cs.ns(|| "enforce tx_hash insertion in block_txs_tree"),
-            &tx_g.get_prev_txs_tree_root(),
-            &tx_g.get_txs_tree_tx_path(),
+            tx_g.get_prev_txs_tree_root(),
+            tx_g.get_txs_tree_tx_path(),
             &null_leaf_g,
-            &tx_g.get_tx_hash(),
+            tx_g.get_tx_hash(),
             should_enforce,
         )?;
 
         new_tree_root_g.conditional_enforce_equal(
             cs.ns(|| "enforce next_root"),
-            &tx_g.get_next_txs_tree_root(),
+            tx_g.get_next_txs_tree_root(),
             should_enforce,
         )?;
 

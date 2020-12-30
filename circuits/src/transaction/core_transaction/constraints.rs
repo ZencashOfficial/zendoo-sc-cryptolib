@@ -1,11 +1,11 @@
-use algebra::Field;
+use algebra::PrimeField;
 use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreePath};
-use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget, FieldBasedMerkleTreePathGadget};
+use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
 use crate::transaction_box::zen_box::constraints::{InputZenBoxGadget, OutputZenBoxGadget};
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::FromGadget;
 use r1cs_core::{ConstraintSystem, SynthesisError};
-use crate::transaction::core_transaction::CoreTransactionProverData;
+use crate::transaction::core_transaction::{CoreTransactionProverData, CoreTransaction};
 use r1cs_std::alloc::AllocGadget;
 use crate::transaction::constraints::TransactionGadget;
 use crate::transaction_box::base_coin_box::constraints::BaseCoinBoxGadget;
@@ -13,10 +13,11 @@ use r1cs_crypto::merkle_tree::field_based_mht::FieldBasedBinaryMerkleTreePathGad
 use r1cs_std::bits::boolean::Boolean;
 use std::marker::PhantomData;
 
+//TODO: Implement TransactionProverDataGadget trait for CoreTransactionProverDataGadget
 pub struct CoreTransactionProverDataGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
 >
 {
@@ -32,16 +33,15 @@ pub struct CoreTransactionProverDataGadget<
     _hash:              PhantomData<H>,
 }
 
-//TODO: Implement TransactionProverDataGadget trait for CoreTransactionProverDataGadget
 //TODO: Decide how to handle AllocGadget<T> and FromGadget<D>. Because CoreTransaction contains
 //      prover data and prover data contains CoreTransaction
-pub struct CoreTransactionGadget<    
-    ConstraintF: Field,
+pub struct CoreTransactionGadget<
+    ConstraintF: PrimeField,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 >
 {
     input_gs: 							                Vec<InputZenBoxGadget<ConstraintF, P, H, HG, S, SG>>,
@@ -50,7 +50,7 @@ pub struct CoreTransactionGadget<
     custom_fields_hash_g: 					            FpGadget<ConstraintF>,
     non_coin_boxes_input_ids_cumulative_hash_g: 		FpGadget<ConstraintF>,
     non_coin_boxes_output_data_cumulative_hash_g: 	    FpGadget<ConstraintF>,
-    prover_data_g:					                    CoreTransactionProverDataGadget<ConstraintF, P, H, HG>,
+    prover_data_g:					                    CoreTransactionProverDataGadget<ConstraintF, H, HG, P>,
     tx_hash_without_nonces_g: 				            FpGadget<ConstraintF>,
     tx_hash_g:							                FpGadget<ConstraintF>,
     is_phantom:                                         Boolean,
@@ -58,12 +58,12 @@ pub struct CoreTransactionGadget<
 
 impl<ConstraintF, P, H, HG, S, SG> CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
+        HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     pub(crate) fn enforce_transaction_hash_without_nonces<CS: ConstraintSystem<ConstraintF>>(
         mut cs:                                         CS,
@@ -93,7 +93,7 @@ impl<ConstraintF, P, H, HG, S, SG> CoreTransactionGadget<ConstraintF, P, H, HG, 
         //TODO: Is this the correct way ?
         let mut hash_outputs = Vec::new();
 
-        outputs.iter().enumerate().map(
+        output_box_gs.iter().enumerate().map(
             |(index, output)| {
                 let output_as_fes = output.zen_box.coin_box.to_field_gadget_elements(
                     cs.ns(|| format!("get_box_data_output_{}", index))
@@ -112,9 +112,9 @@ impl<ConstraintF, P, H, HG, S, SG> CoreTransactionGadget<ConstraintF, P, H, HG, 
         let tx_hash_without_nonces = HG::check_evaluation_gadget(
             cs.ns(|| "tx_hash_without_nonces"),
             &[
-                inputs_digest, non_coin_boxes_input_ids_cumulative_hash,
-                outputs_digest, non_coin_boxes_output_data_cumulative_hash,
-                fee, custom_fields_hash
+                inputs_digest, non_coin_boxes_input_ids_cumulative_hash_g,
+                outputs_digest, non_coin_boxes_output_data_cumulative_hash_g,
+                fee_g, custom_fields_hash_g
             ]
         )?;
 
@@ -145,95 +145,96 @@ impl<ConstraintF, P, H, HG, S, SG> CoreTransactionGadget<ConstraintF, P, H, HG, 
         // tx_hash
         HG::check_evaluation_gadget(
             cs.ns(|| "tx_hash"),
-            &[message_to_sign, sigs_hash]
+            &[message_to_sign_g, sigs_hash]
         )
     }
 }
 
-impl<ConstraintF, P, H, HG, S, SG> TransactionGadget<ConstraintF, P, H, HG, S, SG>
+impl<ConstraintF, P, H, HG, S, SG>
+TransactionGadget<ConstraintF, CoreTransaction<ConstraintF, S, P>, CoreTransactionProverData<ConstraintF, S, P>, P, H, HG, S, SG>
 for CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
+        HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
-    fn get_coin_inputs(&self) -> Vec<BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>> {
+    fn get_coin_inputs(&self) -> &[BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>] {
         let mut input_gs = Vec::new();
         for input_box_g in self.input_gs.iter() {
             input_gs.push(input_box_g.zen_box.coin_box.clone())
         }
-        input_gs
+        input_gs.as_slice()
     }
 
-    fn get_coin_outputs(&self) -> Vec<BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>> {
+    fn get_coin_outputs(&self) -> &[BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>] {
         let mut output_gs = Vec::new();
-        for output_box_g in self.input_gs.iter() {
+        for output_box_g in self.output_gs.iter() {
             output_gs.push(output_box_g.coin_box.clone())
         }
-        input_gs
+        output_gs.as_slice()
     }
 
-    fn get_fee(&self) -> FpGadget<ConstraintF> {
-        self.fee_g.clone()
+    fn get_fee(&self) -> &FpGadget<ConstraintF> {
+        &self.fee_g
     }
 
-    fn get_signatures(&self) -> Vec<SG> {
+    fn get_signatures(&self) -> &[SG::SignatureGadget] {
         let mut sig_gs = Vec::new();
-        for sig_g in self.input_gs.iter() {
-            input_gs.push(input_box_g.sig.clone())
+        for input_box_g in self.input_gs.iter() {
+            sig_gs.push(input_box_g.sig.clone())
         }
-        sig_gs
+        sig_gs.as_slice()
     }
 
-    fn get_pks(&self) -> Vec<SG::PublicKeyGadget> {
+    fn get_pks(&self) -> &[SG::PublicKeyGadget] {
         let mut pk_gs = Vec::new();
-        for pk_g in self.input_gs.iter() {
-            input_gs.push(input_box_g.zen_box.coin_box.pk.clone())
+        for input_box_g in self.input_gs.iter() {
+            pk_gs.push(input_box_g.zen_box.coin_box.pk.clone())
         }
-        pk_gs
+        pk_gs.as_slice()
     }
 
-    fn get_message_to_sign(&self) -> FpGadget<ConstraintF> {
-        self.tx_hash_without_nonces_g.clone()
+    fn get_message_to_sign(&self) -> &FpGadget<ConstraintF> {
+        &self.tx_hash_without_nonces_g
     }
 
-    fn get_tx_hash(&self) -> FpGadget<ConstraintF> {
-        self.tx_hash_g.clone()
+    fn get_tx_hash(&self) -> &FpGadget<ConstraintF> {
+        &self.tx_hash_g
     }
 
-    fn is_phantom(&self) -> Boolean {
-        self.is_phantom.clone()
+    fn is_phantom(&self) -> &Boolean {
+        &self.is_phantom
     }
 
-    fn get_txs_tree_tx_path(&self) -> MHTPG {
-        self.prover_data_g.txs_tree_tx_path.clone()
+    fn get_txs_tree_tx_path(&self) -> &FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> {
+        &self.prover_data_g.txs_tree_tx_path
     }
 
-    fn get_prev_txs_tree_root(&self) -> FpGadget<ConstraintF> {
-        self.prover_data_g.prev_txs_tree_root.clone()
+    fn get_prev_txs_tree_root(&self) -> &FpGadget<ConstraintF> {
+        &self.prover_data_g.prev_txs_tree_root
     }
 
-    fn get_next_txs_tree_root(&self) -> FpGadget<ConstraintF> {
-        self.prover_data_g.next_txs_tree_root.clone()
+    fn get_next_txs_tree_root(&self) -> &FpGadget<ConstraintF> {
+        &self.prover_data_g.next_txs_tree_root
     }
 
-    fn get_prev_mst_root(&self) -> FpGadget<ConstraintF> {
-        self.prover_data_g.prev_mst_root.clone()
+    fn get_prev_mst_root(&self) -> &FpGadget<ConstraintF> {
+        &self.prover_data_g.prev_mst_root
     }
 
-    fn get_next_mst_root(&self) -> FpGadget<ConstraintF> {
-        self.prover_data_g.next_mst_root.clone()
+    fn get_next_mst_root(&self) -> &FpGadget<ConstraintF> {
+        &self.prover_data_g.next_mst_root
     }
 
-    fn get_prev_bvt_root(&self) -> FpGadget<ConstraintF> {
-        self.prover_data_g.prev_bvt_root.clone()
+    fn get_prev_bvt_root(&self) -> &FpGadget<ConstraintF> {
+        &self.prover_data_g.prev_bvt_root
     }
 
-    fn get_next_bvt_root(&self) -> FpGadget<ConstraintF> {
-        self.prover_data_g.next_bvt_root.clone()
+    fn get_next_bvt_root(&self) -> &FpGadget<ConstraintF> {
+        &self.prover_data_g.next_bvt_root
     }
 
     fn get_bvt_batch_size(&self) -> usize {
@@ -244,12 +245,12 @@ for CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
 impl<ConstraintF, P, H, HG, S, SG> FromGadget<CoreTransactionProverData<ConstraintF, S, P>, ConstraintF>
     for CoreTransactionGadget<ConstraintF, P, H, HG, S, SG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
+        HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     fn from<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -327,5 +328,5 @@ impl<ConstraintF, P, H, HG, S, SG> FromGadget<CoreTransactionProverData<Constrai
     }
 }
 
-//TODO: Finish implementing TransactionProverDataGadget for CoreTransactionProverDataGadget
+//TODO: Finish implementing TransactionGadget for CoreTransactionGadget
 //      (e.g. AllocGadget, ConstantGadget, EqGadget)

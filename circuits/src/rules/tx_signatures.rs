@@ -1,31 +1,25 @@
 use crate::transaction::constraints::TransactionGadget;
-use algebra::Field;
+use algebra::PrimeField;
 use crate::{Transaction, TransactionProverData};
 use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme};
 use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
 use r1cs_core::{ConstraintSystem, SynthesisError};
 use r1cs_std::{
-    fields::{
-        fp::FpGadget, FieldGadget,
-    },
+    fields::fp::FpGadget,
     bits::boolean::Boolean,
 };
 use std::marker::PhantomData;
-use r1cs_std::eq::EqGadget;
-use crate::transaction_box::base_coin_box::constraints::BaseCoinBoxGadget;
-use crate::transaction_box::constraints::TransactionBoxGadget;
-use r1cs_std::select::CondSelectGadget;
 
 pub struct TransactionSignaturesGadget<
-    ConstraintF: Field,
+    ConstraintF: PrimeField,
     T:           Transaction,
     D:           TransactionProverData<T>,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
-    HG:          FieldBasedHashGadget<H, ConstraintF>,
+    HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
-    TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+    TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 >
 {
     _field:             PhantomData<ConstraintF>,
@@ -41,15 +35,15 @@ pub struct TransactionSignaturesGadget<
 
 impl<ConstraintF, T, D, P, H, HG, S, SG, TG> TransactionSignaturesGadget<ConstraintF, T, D, P, H, HG, S, SG, TG>
     where
-        ConstraintF: Field,
+        ConstraintF: PrimeField,
         T:           Transaction,
         D:           TransactionProverData<T>,
         P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
         H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
+        HG:          FieldBasedHashGadget<H, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
-        TG:          TransactionGadget<T, D, P, H, HG, S, SG>
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
+        TG:          TransactionGadget<ConstraintF, T, D, P, H, HG, S, SG>
 {
     pub fn conditionally_enforce_signatures_verification<CS: ConstraintSystem<ConstraintF>>(
         mut cs: CS,
@@ -61,7 +55,7 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> TransactionSignaturesGadget<Constra
         let pks_g = tx_g.get_pks();
         let message_to_sign_g = tx_g.get_message_to_sign();
 
-        for (i, ((sig_g, pk_g))) in sigs_g.iter().zip(pk_g.iter()).enumerate(){
+        for (i, (sig_g, pk_g)) in sigs_g.iter().zip(pks_g.iter()).enumerate(){
             //TODO: We don't really know if these signatures and pks come from boxes that are phantom.
             //      In this case we should be able to recognize the phantom ones and enforce the constraint
             //      below accordingly. We can try to move get_signatures() and get_pks() function into
@@ -73,7 +67,7 @@ impl<ConstraintF, T, D, P, H, HG, S, SG, TG> TransactionSignaturesGadget<Constra
                 cs.ns(|| format!("enforce sig verification {}", i)),
                 pk_g,
                 sig_g,
-                &[message_to_sign_g],
+                &[message_to_sign_g.clone()],
                 should_enforce
             )?;
         }

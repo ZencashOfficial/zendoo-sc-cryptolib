@@ -1,12 +1,18 @@
 use algebra::PrimeField;
-use primitives::{FieldBasedSignatureScheme, FieldBasedMerkleTreePath, FieldBasedMerkleTreeParameters, FieldBasedBinaryMHTPath};
-use crate::base_tx_circuit::base_tx_primitives::transaction::InputCoinBox;
+use primitives::{FieldBasedSignatureScheme, FieldBasedMerkleTreeParameters, FieldBasedBinaryMHTPath};
 use crate::transaction_box::zen_box::{InputZenBox, OutputZenBox};
-use crate::TransactionProverData;
+use crate::{TransactionProverData, Transaction};
+use serde::{Serialize, Deserialize};
 
 pub mod constraints;
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = ""),
+    Default(bound = ""),
+)]
+#[derive(Serialize, Deserialize)]
+#[serde(bound(deserialize = "F: PrimeField"))]
 pub struct CoreTransaction<
     F: PrimeField,
     S: FieldBasedSignatureScheme<Data = F>,
@@ -21,7 +27,20 @@ pub struct CoreTransaction<
     pub non_coin_boxes_output_data_cumulative_hash: F,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+impl<F, S, P> Transaction for CoreTransaction<F, S, P>
+    where
+        F: PrimeField,
+        S: FieldBasedSignatureScheme<Data = F>,
+        P: FieldBasedMerkleTreeParameters<Data = F>,
+{}
+
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = ""),
+    Default(bound = ""),
+)]
+#[derive(Serialize, Deserialize)]
+#[serde(bound(deserialize = "F: PrimeField"))]
 pub struct CoreTransactionProverData<
     F: PrimeField,
     S: FieldBasedSignatureScheme<Data = F>,
@@ -39,5 +58,9 @@ pub struct CoreTransactionProverData<
     pub bvt_batch_size:		usize
 }
 
-impl<F: PrimeField, S: FieldBasedSignatureScheme<Data = F>, MHTP: FieldBasedMerkleTreePath> TransactionProverData
-    for CoreTransactionProverData<F, S, MHTP> {}
+impl<F, S, P> TransactionProverData<CoreTransaction<F, S, P>> for CoreTransactionProverData<F, S, P>
+where
+    F: PrimeField,
+    S: FieldBasedSignatureScheme<Data = F>,
+    P: FieldBasedMerkleTreeParameters<Data = F>,
+{}

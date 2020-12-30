@@ -6,8 +6,6 @@ use r1cs_core::ConstraintSystem;
 use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use r1cs_std::bits::boolean::Boolean;
 
-// TODO: GINGER: ToConstraintFieldGadget<Field>: the trait `algebra::PrimeField` is not implemented for `Field`
-// So using PrimeField instead of Field for the ConstraintF
 pub trait TransactionBoxGadget<ConstraintF: PrimeField, B: TransactionBox>:
     // We need to be able to allocate a Box in the circuit
     AllocGadget<B, ConstraintF> +
@@ -25,5 +23,5 @@ pub trait TransactionBoxGadget<ConstraintF: PrimeField, B: TransactionBox>:
         <Self as ConstantGadget<B, ConstraintF>>::from_value(cs, &phantom_box)
     }
 
-    fn is_phantom(&self) -> Boolean;
+    fn is_phantom(&self) -> &Boolean;
 }
