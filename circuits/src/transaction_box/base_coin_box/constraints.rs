@@ -1,9 +1,7 @@
-use algebra::{PrimeField, Group, ToBytes};
-use r1cs_std::groups::GroupGadget;
-use r1cs_crypto::{FieldBasedMerkleTreePathGadget, FieldBasedHashGadget, FieldBasedSigGadget};
-use primitives::{FieldBasedMerkleTreePath, FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreeParameters};
+use algebra::{PrimeField, ToBytes};
+use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
+use primitives::{FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreeParameters};
 use r1cs_std::bits::uint64::UInt64;
-use r1cs_crypto::signature::schnorr::field_based_schnorr::FieldBasedSchnorrPkGadget;
 use r1cs_std::fields::fp::FpGadget;
 use r1cs_std::alloc::{AllocGadget, ConstantGadget};
 use crate::transaction_box::base_coin_box::BaseCoinBox;
@@ -17,17 +15,24 @@ use r1cs_std::to_field_gadget_vec::ToConstraintFieldGadget;
 use std::borrow::Borrow;
 
 //TODO: Add missing fields ? (sync with actual SDK)
+#[derive(Derivative)]
+#[derivative(
+    Eq(bound = ""),
+    PartialEq(bound = ""),
+)]
 pub struct BaseCoinBoxGadget<
     ConstraintF: PrimeField,
     P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 >
 {
+    pub amount_bits: UInt64,
     pub amount:      FpGadget<ConstraintF>,
     pub pk:          SG::PublicKeyGadget,
+    pub nonce_bits:  UInt64,
     pub nonce:       FpGadget<ConstraintF>,
     pub id:          FpGadget<ConstraintF>,
     pub custom_hash: FpGadget<ConstraintF>,
@@ -46,14 +51,13 @@ where
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     pub fn get_path_in_mst(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.mst_path.clone(); }
     pub fn get_path_in_bvt(&self) -> FieldBasedBinaryMerkleTreePathGadget<P, HG, ConstraintF> { return self.bvt_path.clone(); }
     pub fn get_leaf_val_in_bvt(&self) -> FpGadget<ConstraintF> { return self.bvt_leaf.clone(); }
 }
 
-// TODO: GINGER: Default is not implemented for FieldBasedMerkleTreeParameters and FieldBasedSignatureScheme
 impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox<ConstraintF, S, P>>
     for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
     where
@@ -62,7 +66,7 @@ impl<ConstraintF, P, H, HG, S, SG> TransactionBoxGadget<ConstraintF, BaseCoinBox
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     fn is_phantom(&self) -> Boolean {
         self.is_phantom.clone()
@@ -77,7 +81,7 @@ impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, C
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     fn alloc<F, T, CS: ConstraintSystem<ConstraintF>>(mut cs: CS, f: F) -> Result<Self, SynthesisError>
         where
@@ -173,7 +177,8 @@ impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, C
         )?;
 
         let mut new_instance = Self {
-            amount, pk, nonce, id, custom_hash, mst_path, bvt_path, bvt_leaf, is_phantom: Boolean::Constant(false)
+            amount_bits, amount, pk, nonce_bits, nonce, id, custom_hash, mst_path, bvt_path,
+            bvt_leaf, is_phantom: Boolean::Constant(false)
         };
         let phantom_self = Self::get_phantom(cs.ns(|| "hardcode phantom box"));
         let is_phantom = new_instance.is_eq(cs.ns(|| "is phantom"), &phantom_self)?;
@@ -182,7 +187,7 @@ impl<ConstraintF, P, H, HG, S, SG> AllocGadget<BaseCoinBox<ConstraintF, S, P>, C
         Ok(new_instance)
     }
 
-    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(cs: CS, f: F) -> Result<Self, SynthesisError>
+    fn alloc_input<F, T, CS: ConstraintSystem<ConstraintF>>(_cs: CS, _f: F) -> Result<Self, SynthesisError>
         where
         F: FnOnce() -> Result<T, SynthesisError>,
         T: Borrow<BaseCoinBox<ConstraintF, S, P>>
@@ -199,15 +204,17 @@ for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     fn from_value<CS: ConstraintSystem<ConstraintF>>(mut cs: CS, value: &BaseCoinBox<ConstraintF, S, P>) -> Self {
 
+        let amount_bits = UInt64::constant(value.amount.clone());
         let amount = FpGadget::<ConstraintF>::from_value(
             &mut cs.ns(|| "hardcode amount as field gadget"),
             &ConstraintF::read(to_bytes!(value.amount.clone()).unwrap().as_slice()).unwrap()
         );
 
+        let nonce_bits = UInt64::constant(value.nonce.clone());
         let nonce = FpGadget::<ConstraintF>::from_value(
             &mut cs.ns(|| "hardcode nonce as field gadget"),
             &ConstraintF::read(to_bytes!(value.nonce.clone()).unwrap().as_slice()).unwrap()
@@ -246,51 +253,23 @@ for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
             &value.bvt_leaf
         );
 
-        Self { amount, pk, nonce, id, custom_hash, mst_path, bvt_path, bvt_leaf, is_phantom: Boolean::Constant(false) }
+        Self {
+            amount_bits, amount, pk, nonce_bits, nonce, id, custom_hash, mst_path, bvt_path,
+            bvt_leaf, is_phantom: Boolean::Constant(false)
+        }
     }
 
     fn get_constant(&self) -> BaseCoinBox<ConstraintF, S, P> {
         BaseCoinBox {
-            amount: self.amount.value.unwrap(),
-            pk: self.pk.get_constant().unwrap(), // TODO: To be implemented in Ginger
-            nonce: self.nonce.value.unwrap(),
+            amount: self.amount_bits.get_value().unwrap(),
+            pk: self.pk.get_constant(),
+            nonce: self.nonce_bits.get_value().unwrap(),
             id: self.id.value.unwrap(),
             custom_hash: self.custom_hash.value.unwrap(),
-            mst_path: self.mst_path.get_constant().unwrap(), // TODO: To be implemented in Ginger
-            bvt_path: self.bvt_path.get_constant().unwrap(), // TODO: To be implemented in Ginger
+            mst_path: self.mst_path.get_constant(),
+            bvt_path: self.bvt_path.get_constant(),
             bvt_leaf: self.bvt_leaf.value.unwrap()
         }
-    }
-}
-
-impl<ConstraintF, P, H, HG, S, SG> Eq for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
-    where
-        ConstraintF: PrimeField,
-        P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
-        H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
-        S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
-{}
-
-impl<ConstraintF, P, H, HG, S, SG> PartialEq for BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
-    where
-        ConstraintF: PrimeField,
-        P:           FieldBasedMerkleTreeParameters<Data = ConstraintF, H = H>,
-        H:           FieldBasedHash<Data = ConstraintF>,
-        HG:          FieldBasedHashGadget<H, ConstraintF>,
-        S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.amount == other.amount &&
-            self.pk == other.pk &&
-            self.nonce == other.nonce &&
-            self.id == other.id &&
-            self.custom_hash == other.custom_hash &&
-            self.mst_path == other.mst_path &&
-            self.bvt_path == other.bvt_path &&
-            self.bvt_leaf == other.bvt_leaf
     }
 }
 
@@ -301,7 +280,7 @@ impl<ConstraintF, P, H, HG, S, SG> EqGadget<ConstraintF> for BaseCoinBoxGadget<C
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     fn is_eq<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self) -> Result<Boolean, SynthesisError> {
         let b1 = self.amount.is_eq(cs.ns(|| "is_eq_1"), &other.amount)?;
@@ -319,24 +298,28 @@ impl<ConstraintF, P, H, HG, S, SG> EqGadget<ConstraintF> for BaseCoinBoxGadget<C
         )
     }
 
-    //TODO
     fn conditional_enforce_equal<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self, should_enforce: &Boolean) -> Result<(), SynthesisError> {
-        self.box_type.conditional_enforce_equal(cs.ns(|| "cond_eq_1"), &other.box_type, should_enforce)?;
-        self.amount.conditional_enforce_equal(cs.ns(|| "cond_eq_2"), &other.amount, should_enforce)?;
-        self.custom_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_3"), &other.custom_hash, should_enforce)?;
-        self.pk.pk.conditional_enforce_equal(cs.ns(|| "cond_eq_4"), &other.pk.pk, should_enforce)?;
-        self.proposition_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_5"), &other.proposition_hash, should_enforce)?;
+        self.amount.conditional_enforce_equal(cs.ns(|| "cond_eq_1"), &other.amount, should_enforce)?;
+        self.pk.conditional_enforce_equal(cs.ns(|| "cond_eq_2"), &other.pk, should_enforce)?;
+        self.nonce.conditional_enforce_equal(cs.ns(|| "cond_eq_3"), &other.nonce, should_enforce)?;
+        self.id.conditional_enforce_equal(cs.ns(|| "cond_eq_4"), &other.id, should_enforce)?;
+        self.custom_hash.conditional_enforce_equal(cs.ns(|| "cond_eq_5"), &other.custom_hash, should_enforce)?;
+        self.mst_path.conditional_enforce_equal(cs.ns(|| "cond_eq_6"), &other.mst_path, should_enforce)?;
+        self.bvt_path.conditional_enforce_equal(cs.ns(|| "cond_eq_7"), &other.bvt_path, should_enforce)?;
+        self.bvt_leaf.conditional_enforce_equal(cs.ns(|| "cond_eq_8"), &other.bvt_leaf, should_enforce)?;
 
         Ok(())
     }
 
-    //TODO
     fn conditional_enforce_not_equal<CS: ConstraintSystem<ConstraintF>>(&self, mut cs: CS, other: &Self, should_enforce: &Boolean) -> Result<(), SynthesisError> {
-        self.box_type.conditional_enforce_not_equal(cs.ns(|| "cond_neq_1"), &other.box_type, should_enforce)?;
-        self.amount.conditional_enforce_not_equal(cs.ns(|| "cond_neq_2"), &other.amount, should_enforce)?;
-        self.custom_hash.conditional_enforce_not_equal(cs.ns(|| "cond_neq_3"), &other.custom_hash, should_enforce)?;
-        self.pk.pk.conditional_enforce_not_equal(cs.ns(|| "cond_neq_4"), &other.pk.pk, should_enforce)?;
-        self.proposition_hash.conditional_enforce_not_equal(cs.ns(|| "cond_neq_5"), &other.proposition_hash, should_enforce)?;
+        self.amount.conditional_enforce_equal(cs.ns(|| "cond_neq_1"), &other.amount, should_enforce)?;
+        self.pk.conditional_enforce_equal(cs.ns(|| "cond_neq_2"), &other.pk, should_enforce)?;
+        self.nonce.conditional_enforce_equal(cs.ns(|| "cond_neq_3"), &other.nonce, should_enforce)?;
+        self.id.conditional_enforce_equal(cs.ns(|| "cond_neq_4"), &other.id, should_enforce)?;
+        self.custom_hash.conditional_enforce_equal(cs.ns(|| "cond_neq_5"), &other.custom_hash, should_enforce)?;
+        self.mst_path.conditional_enforce_equal(cs.ns(|| "cond_neq_6"), &other.mst_path, should_enforce)?;
+        self.bvt_path.conditional_enforce_equal(cs.ns(|| "cond_neq_7"), &other.bvt_path, should_enforce)?;
+        self.bvt_leaf.conditional_enforce_equal(cs.ns(|| "cond_neq_8"), &other.bvt_leaf, should_enforce)?;
 
         Ok(())
     }
@@ -349,7 +332,7 @@ impl<ConstraintF, P, H, HG, S, SG> ToConstraintFieldGadget<ConstraintF> for Base
         H:           FieldBasedHash<Data = ConstraintF>,
         HG:          FieldBasedHashGadget<H, ConstraintF>,
         S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-        SG:          FieldBasedSigGadget<S, ConstraintF>,
+        SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 {
     type FieldGadget = FpGadget<ConstraintF>;
 

@@ -1,17 +1,17 @@
 pub mod constraints;
 
-use primitives::signature::schnorr::field_based_schnorr::FieldBasedSchnorrPk;
-use algebra::{Field, Group};
-use r1cs_core::ToConstraintField;
-use primitives::{FieldBasedHash, FieldBasedMerkleTreeParameters, FieldBasedBinaryMHTPath, FieldBasedMerkleTreePath, FieldBasedSignatureScheme};
+use algebra::Field;
+use primitives::{FieldBasedMerkleTreeParameters, FieldBasedBinaryMHTPath, FieldBasedSignatureScheme};
 use serde::{Serialize, Deserialize};
 use crate::transaction_box::TransactionBox;
 
-// TODO: GINGER: Deserialize is not defined for Field and PrimeField
-// TODO: GINGER: the trait `std::default::Default` is not implemented for `<P as primitives::FieldBasedMerkleTreeParameters>::H`
-// TODO: GINGER: the trait `std::clone::Clone` is not implemented for `<P as primitives::FieldBasedMerkleTreeParameters>::H`
-// #[derive(Clone, Default, Serialize, Deserialize)]
-#[derive(Clone, Default, Serialize)]
+#[derive(Derivative)]
+#[derivative(
+    Clone(bound = ""),
+    Default(bound = ""),
+)]
+#[derive(Serialize, Deserialize)]
+#[serde(bound(deserialize = "F: Field"))]
 pub struct BaseCoinBox<
     F: Field,
     S: FieldBasedSignatureScheme<Data = F>,

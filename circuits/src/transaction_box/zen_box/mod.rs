@@ -1,6 +1,6 @@
 use crate::transaction_box::base_coin_box::BaseCoinBox;
 use algebra::PrimeField;
-use primitives::{FieldBasedSignatureScheme, FieldBasedMerkleTreePath, FieldBasedMerkleTreeParameters};
+use primitives::{FieldBasedSignatureScheme, FieldBasedMerkleTreeParameters};
 
 pub mod constraints;
 

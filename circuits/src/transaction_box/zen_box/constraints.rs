@@ -1,7 +1,8 @@
 use crate::transaction_box::base_coin_box::constraints::BaseCoinBoxGadget;
 use algebra::PrimeField;
-use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme, FieldBasedMerkleTreePath};
-use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget, FieldBasedMerkleTreePathGadget};
+use primitives::{FieldBasedMerkleTreeParameters, FieldBasedHash, FieldBasedSignatureScheme};
+use r1cs_crypto::{FieldBasedHashGadget, FieldBasedSigGadget};
+use r1cs_std::fields::fp::FpGadget;
 
 pub struct ZenBoxGadget<
     ConstraintF: PrimeField,
@@ -9,7 +10,7 @@ pub struct ZenBoxGadget<
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 >
 {
     pub coin_box: BaseCoinBoxGadget<ConstraintF, P, H, HG, S, SG>
@@ -24,7 +25,7 @@ pub struct InputZenBoxGadget<
     H:           FieldBasedHash<Data = ConstraintF>,
     HG:          FieldBasedHashGadget<H, ConstraintF>,
     S:           FieldBasedSignatureScheme<Data = ConstraintF>,
-    SG:          FieldBasedSigGadget<S, ConstraintF>,
+    SG:          FieldBasedSigGadget<S, ConstraintF, DataGadget = FpGadget<ConstraintF>>,
 > {
     pub zen_box: ZenBoxGadget<ConstraintF, P, H, HG, S, SG>,
     pub sig:     SG::SignatureGadget,
