@@ -5,7 +5,7 @@ import com.horizen.librustsidechains.Library;
 public class VRFProof implements AutoCloseable
 {
 
-  public static int PROOF_LENGTH = 385;
+  public static int PROOF_LENGTH = 193;
 
   private long proofPointer;
 

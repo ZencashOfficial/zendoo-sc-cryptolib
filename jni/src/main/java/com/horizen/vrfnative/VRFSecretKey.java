@@ -4,7 +4,7 @@ import com.horizen.librustsidechains.Library;
 
 public class VRFSecretKey implements AutoCloseable
 {
-    public static final int SECRET_KEY_LENGTH = 96;
+    public static final int SECRET_KEY_LENGTH = 48;
 
     private long secretKeyPointer;
 

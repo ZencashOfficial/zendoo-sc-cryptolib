@@ -4,7 +4,7 @@ import java.util.Random;
 
 public class FieldElement implements AutoCloseable {
 
-    public static int FIELD_ELEMENT_LENGTH = 96;
+    public static int FIELD_ELEMENT_LENGTH = 48;
 
     private long fieldElementPointer;
 

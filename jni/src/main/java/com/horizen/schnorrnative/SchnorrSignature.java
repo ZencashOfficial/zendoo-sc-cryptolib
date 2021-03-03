@@ -5,7 +5,7 @@ import com.horizen.librustsidechains.Library;
 public class SchnorrSignature implements AutoCloseable
 {
 
-  public static int SIGNATURE_LENGTH = 192;
+  public static int SIGNATURE_LENGTH = 96;
 
   private long signaturePointer;
 

@@ -1,7 +1,7 @@
 use algebra::{
-    BigInteger768,
-    fields::mnt4753::Fr as MNT4Fr,
-    curves::mnt6753::G1Projective as MNT6G1Projective,
+    BigInteger384,
+    fields::bn_382::Fr as Bn382Fr,
+    curves::bn_382::G1Projective as BN382G1Projective,
     Field, PrimeField, ToBits, ProjectiveCurve,
 };
 
@@ -13,7 +13,7 @@ use primitives::{
         },
         FieldBasedSignatureScheme,
     },
-    crh::{FieldBasedHash, MNT4PoseidonHash},
+    crh::{FieldBasedHash, BN382FrPoseidonHash},
 };
 use r1cs_crypto::{
     signature::{
@@ -23,11 +23,11 @@ use r1cs_crypto::{
         },
         FieldBasedSigGadget,
     },
-    crh::{MNT4PoseidonHashGadget, FieldBasedHashGadget}
+    crh::{BN382FrPoseidonHashGadget, FieldBasedHashGadget}
 };
 
 use r1cs_std::{
-    instantiated::mnt6_753::G1Gadget as MNT6G1Gadget,
+    instantiated::bn_382::G1Gadget as BN382G1Gadget,
     fields::{
         fp::FpGadget, FieldGadget,
     },
@@ -52,30 +52,30 @@ lazy_static! {
 }
 
 //Sig types
-type SchnorrSig = FieldBasedSchnorrSignatureScheme<MNT4Fr, MNT6G1Projective, MNT4PoseidonHash>;
-type SchnorrSigGadget = FieldBasedSchnorrSigGadget<MNT4Fr, MNT6G1Projective>;
+type SchnorrSig = FieldBasedSchnorrSignatureScheme<Bn382Fr, BN382G1Projective, BN382FrPoseidonHash>;
+type SchnorrSigGadget = FieldBasedSchnorrSigGadget<Bn382Fr, BN382G1Projective>;
 type SchnorrVrfySigGadget = FieldBasedSchnorrSigVerificationGadget<
-    MNT4Fr, MNT6G1Projective, MNT6G1Gadget, MNT4PoseidonHash, MNT4PoseidonHashGadget
+    Bn382Fr, BN382G1Projective, BN382G1Gadget, BN382FrPoseidonHash, BN382FrPoseidonHashGadget
 >;
-type SchnorrPk = FieldBasedSchnorrPk<MNT6G1Projective>;
-type SchnorrPkGadget = FieldBasedSchnorrPkGadget<MNT4Fr, MNT6G1Projective, MNT6G1Gadget>;
+type SchnorrPk = FieldBasedSchnorrPk<BN382G1Projective>;
+type SchnorrPkGadget = FieldBasedSchnorrPkGadget<Bn382Fr, BN382G1Projective, BN382G1Gadget>;
 
 //Field types
-type MNT4FrGadget = FpGadget<MNT4Fr>;
+type BN382FrGadget = FpGadget<Bn382Fr>;
 
 struct NaiveTresholdSignatureTest{
 
     //Witnesses
     pks:                      Vec<SchnorrPk>,
-    sigs:                     Vec<FieldBasedSchnorrSignature<MNT4Fr, MNT6G1Projective>>,
-    threshold:                MNT4Fr,
+    sigs:                     Vec<FieldBasedSchnorrSignature<Bn382Fr, BN382G1Projective>>,
+    threshold:                Bn382Fr,
     b:                        Vec<bool>,
-    end_epoch_mc_b_hash:      MNT4Fr,
-    prev_end_epoch_mc_b_hash: MNT4Fr,
-    mr_bt:                    MNT4Fr,
+    end_epoch_mc_b_hash:      Bn382Fr,
+    prev_end_epoch_mc_b_hash: Bn382Fr,
+    mr_bt:                    Bn382Fr,
 
     //Public inputs
-    aggregated_input:         MNT4Fr,
+    aggregated_input:         Bn382Fr,
 
     //Other
     max_pks:                  usize,
@@ -93,19 +93,19 @@ fn generate_inputs
 {
     //Istantiate rng
     let mut rng = OsRng::default();
-    let mut h = MNT4PoseidonHash::init(None);
+    let mut h = BN382FrPoseidonHash::init(None);
 
     //Generate message to sign
-    let mr_bt: MNT4Fr = rng.gen();
-    let prev_end_epoch_mc_b_hash: MNT4Fr = rng.gen();
-    let end_epoch_mc_b_hash: MNT4Fr = rng.gen();
+    let mr_bt: Bn382Fr = rng.gen();
+    let prev_end_epoch_mc_b_hash: Bn382Fr = rng.gen();
+    let end_epoch_mc_b_hash: Bn382Fr = rng.gen();
     let message = h
         .update(mr_bt)
         .update(prev_end_epoch_mc_b_hash)
         .update(end_epoch_mc_b_hash)
         .finalize();
     //Generate another random message used to simulate a non-valid signature
-    let invalid_message: MNT4Fr = rng.gen();
+    let invalid_message: Bn382Fr = rng.gen();
 
     let mut pks = vec![];
     let mut sigs = vec![];
@@ -132,12 +132,12 @@ fn generate_inputs
     }
 
     //Generate b
-    let t_field = MNT4Fr::from_repr(BigInteger768::from(threshold as u64));
-    let valid_field = MNT4Fr::from_repr(BigInteger768::from(valid_sigs as u64));
+    let t_field = Bn382Fr::from_repr(BigInteger384::from(threshold as u64));
+    let valid_field = Bn382Fr::from_repr(BigInteger384::from(valid_sigs as u64));
     let b_field = valid_field - &t_field;
     let b_bool = {
         let log_max_pks = (max_pks.next_power_of_two() as u64).trailing_zeros() as usize;
-        let to_skip = MNT4Fr::size_in_bits() - (log_max_pks + 1);
+        let to_skip = Bn382Fr::size_in_bits() - (log_max_pks + 1);
         b_field.write_bits()[to_skip..].to_vec()
     };
 
@@ -191,7 +191,7 @@ fn generate_inputs
 
 fn generate_constraints(
     c: NaiveTresholdSignatureTest,
-    mut cs: TestConstraintSystem<MNT4Fr>,
+    mut cs: TestConstraintSystem<Bn382Fr>,
 ) -> bool
 {
     //Internal checks
@@ -217,19 +217,19 @@ fn generate_constraints(
     }
 
     //Check pks
-    let mut pks_threshold_hash_g = MNT4PoseidonHashGadget::check_evaluation_gadget(
+    let mut pks_threshold_hash_g = BN382FrPoseidonHashGadget::check_evaluation_gadget(
         cs.ns(|| "hash public keys"),
         pks_g.iter().map(|pk| pk.pk.x.clone()).collect::<Vec<_>>().as_slice(),
     ).unwrap();
 
     //Allocate threshold as witness
-    let t_g = MNT4FrGadget::alloc(
+    let t_g = BN382FrGadget::alloc(
         cs.ns(|| "alloc threshold"),
         || Ok(c.threshold)
     ).unwrap();
 
     //Check hash commitment
-    pks_threshold_hash_g = MNT4PoseidonHashGadget::check_evaluation_gadget(
+    pks_threshold_hash_g = BN382FrPoseidonHashGadget::check_evaluation_gadget(
         cs.ns(|| "H(H(pks), threshold)"),
         &[pks_threshold_hash_g, t_g.clone()],
     ).unwrap();
@@ -238,22 +238,22 @@ fn generate_constraints(
 
     //Reconstruct message as H(MR(BT), BH(Bi-1), BH(Bi))
 
-    let mr_bt_g = MNT4FrGadget::alloc(
+    let mr_bt_g = BN382FrGadget::alloc(
         cs.ns(|| "alloc mr_bt"),
         || Ok(c.mr_bt)
     ).unwrap();
 
-    let prev_end_epoch_mc_block_hash_g = MNT4FrGadget::alloc(
+    let prev_end_epoch_mc_block_hash_g = BN382FrGadget::alloc(
         cs.ns(|| "alloc prev_end_epoch_mc_block_hash"),
         || Ok(c.prev_end_epoch_mc_b_hash)
     ).unwrap();
 
-    let end_epoch_mc_block_hash_g = MNT4FrGadget::alloc(
+    let end_epoch_mc_block_hash_g = BN382FrGadget::alloc(
         cs.ns(|| "alloc end_epoch_mc_block_hash"),
         || Ok(c.end_epoch_mc_b_hash)
     ).unwrap();
 
-    let message_g = MNT4PoseidonHashGadget::check_evaluation_gadget(
+    let message_g = BN382FrPoseidonHashGadget::check_evaluation_gadget(
         cs.ns(|| "H(MR(BT), H(Bi-1), H(Bi))"),
         &[mr_bt_g.clone(), prev_end_epoch_mc_block_hash_g.clone(), end_epoch_mc_block_hash_g.clone()],
     ).unwrap();
@@ -285,28 +285,28 @@ fn generate_constraints(
     }
 
     //Count valid signatures
-    let mut valid_signatures = MNT4FrGadget::zero(cs.ns(|| "alloc valid signatures count")).unwrap();
+    let mut valid_signatures = BN382FrGadget::zero(cs.ns(|| "alloc valid signatures count")).unwrap();
     for (i, v) in verdicts.iter().enumerate() {
         valid_signatures = valid_signatures.conditionally_add_constant(
             cs.ns(|| format!("add_verdict_{}", i)),
             v,
-            MNT4Fr::one(),
+            Bn382Fr::one(),
         ).unwrap();
     }
 
     //Enforce correct wcert_sysdata_hash
-    let wcert_sysdata_hash_g = MNT4PoseidonHashGadget::check_evaluation_gadget(
+    let wcert_sysdata_hash_g = BN382FrPoseidonHashGadget::check_evaluation_gadget(
         cs.ns(|| "H(valid_signatures, MR(BT), BH(Bi-1), BH(Bi))"),
         &[valid_signatures.clone(), mr_bt_g, prev_end_epoch_mc_block_hash_g, end_epoch_mc_block_hash_g]
     ).unwrap();
 
     //Check pks_threshold_hash and wcert_sysdata_hash
-    let expected_aggregated_input = MNT4FrGadget::alloc_input(
+    let expected_aggregated_input = BN382FrGadget::alloc_input(
         cs.ns(|| "alloc aggregated input"),
         || Ok(c.aggregated_input)
     ).unwrap();
 
-    let actual_aggregated_input = MNT4PoseidonHashGadget::check_evaluation_gadget(
+    let actual_aggregated_input = BN382FrPoseidonHashGadget::check_evaluation_gadget(
         cs.ns(|| "H(pks_threshold_hash, wcert_sysdata_hash)"),
         &[pks_threshold_hash_g, wcert_sysdata_hash_g]
     ).unwrap();
@@ -328,7 +328,7 @@ fn generate_constraints(
     }
 
     //Pack the b's into a field element
-    let b_field = MNT4FrGadget::from_bits(
+    let b_field = BN382FrGadget::from_bits(
         cs.ns(|| "pack the b's into a field element"),
         bs_g.as_slice(),
     ).unwrap();
@@ -362,7 +362,7 @@ fn random_naive_threshold_sig_test() {
         println!("CS satisfiable: {}", satisfiable);
 
         let c = generate_inputs(n, v, t, false, false);
-        let cs = TestConstraintSystem::<MNT4Fr>::new();
+        let cs = TestConstraintSystem::<Bn382Fr>::new();
         let is_satisfied = generate_constraints(c, cs);
 
         // The output must be false whenever the cs should be satisfiable
@@ -382,7 +382,7 @@ fn naive_threshold_sig_test_all_cases() {
     let v = rng.gen_range(1, n);
     let t = rng.gen_range(0, v);
     let c = generate_inputs(n, v, t, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(generate_constraints(c, cs));
     println!("Ok !");
 
@@ -390,7 +390,7 @@ fn naive_threshold_sig_test_all_cases() {
     let v = rng.gen_range(1, n);
     let t = v;
     let c = generate_inputs(n, v, t, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(generate_constraints(c, cs));
     println!("Ok !");
 
@@ -398,31 +398,31 @@ fn naive_threshold_sig_test_all_cases() {
     let t = rng.gen_range(1, n);
     let v = rng.gen_range(0, t);
     let c = generate_inputs(n, v, t, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(!generate_constraints(c, cs));
     println!("Ok !");
 
     println!("Test case v = t = 0");
     let c = generate_inputs(n, 0, 0, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(generate_constraints(c, cs));
     println!("Ok !");
 
     println!("Test case v = t = n");
     let c = generate_inputs(n, n, n, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(generate_constraints(c, cs));
     println!("Ok !");
 
     println!("Test case v = n and t = 0");
     let c = generate_inputs(n, n, 0, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(generate_constraints(c, cs));
     println!("Ok !");
 
     println!("Test negative case v = 0 and t = n");
     let c = generate_inputs(n, 0, n, false, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(!generate_constraints(c, cs));
     println!("Ok !");
 
@@ -430,7 +430,7 @@ fn naive_threshold_sig_test_all_cases() {
     let v = rng.gen_range(1, n);
     let t = rng.gen_range(0, v);
     let c = generate_inputs(n, v, t, true, false);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(!generate_constraints(c, cs));
     println!("Ok !");
 
@@ -438,7 +438,7 @@ fn naive_threshold_sig_test_all_cases() {
     let v = rng.gen_range(1, n);
     let t = rng.gen_range(0, v);
     let c = generate_inputs(n, v, t, false, true);
-    let cs = TestConstraintSystem::<MNT4Fr>::new();
+    let cs = TestConstraintSystem::<Bn382Fr>::new();
     assert!(!generate_constraints(c, cs));
     println!("Ok !");
 }

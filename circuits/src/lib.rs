@@ -33,14 +33,8 @@
 )]
 #![forbid(unsafe_code)]
 
-pub mod base_tx_circuit;
-pub use self::base_tx_circuit::*;
-
 pub mod demo_circuit;
 pub use self::demo_circuit::*;
-
-pub mod snark_builder;
-pub use self::snark_builder::*;
 
 #[macro_use]
 extern crate derivative;
