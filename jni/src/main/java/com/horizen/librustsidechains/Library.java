@@ -1,11 +1,16 @@
 package com.horizen.librustsidechains;
 
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.*;
 import java.io.*;
 import java.net.URL;
 
 public class Library {
 
     private static boolean loaded = false;
+
+    private static String tempDirName = "zendoo_lib";
 
     private static String commonLibName = "zendoo_sc";
 
@@ -17,11 +22,14 @@ public class Library {
     private static String linuxLibName = "lib" + commonLibName + ".so";
     private static String osxLibName = commonLibName + ".jnilib";
 
+    // Order is important: dependencies first
+    private static List<String> windowsDependenciesLibNames = Arrays.asList("libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll");
+
     static {
         load();
     }
 
-    public static String getOperatingSystem() {
+    private static String getOperatingSystem() {
         String name = System.getProperty("os.name").toLowerCase().trim();
         if( name.startsWith("linux") ) {
             return linuxOsName;
@@ -35,7 +43,7 @@ public class Library {
         return name;
     }
 
-    public static int getModel() {
+    private static int getModel() {
         String model = System.getProperty("sun.arch.data.model");
         if (model == null) {
             model = System.getProperty("com.ibm.vm.bitmode");
@@ -46,73 +54,55 @@ public class Library {
         return -1;
     }
 
-    public static String getLibName() {
+    private static List<String> getLibNames() {
         String osName = getOperatingSystem();
         if (osName.equalsIgnoreCase(windowsOsName)) {
-            return windowsLibName;
+            ArrayList<String> res = new ArrayList<>(windowsDependenciesLibNames);
+            res.add(windowsLibName);
+            return res;
         }
         if (osName.equalsIgnoreCase(linuxOsName)) {
-            return linuxLibName;
+            return Collections.singletonList(linuxLibName);
         }
         if (osName.equalsIgnoreCase(osxOsName)) {
-            return osxLibName;
+            return Collections.singletonList(osxLibName);
         }
-        return "";
+        throw new IllegalArgumentException("Unsupported operation system: no libs defined.");
     }
 
-    public static URL getResource() {
-        String resourcePath = "native/" + getOperatingSystem() + getModel() + "/" + getLibName();
+    private static URL getResource(String libName) {
+        String resourcePath = "native/" + getOperatingSystem() + getModel() + "/" + libName;
         return Library.class.getClassLoader().getResource(resourcePath);
     }
 
-    static void close(Closeable f) {
-        if (f != null) {
-            try {
-                f.close();
-            } catch (Throwable e) {
-            }
-        }
+
+    private static File createTempDirectory(String prefix) throws IOException {
+        String tempDir = System.getProperty("java.io.tmpdir");
+        File generatedDir = new File(tempDir, prefix + System.nanoTime());
+
+        if (!generatedDir.mkdir())
+            throw new IOException("Failed to create temp directory " + generatedDir.getName());
+
+        return generatedDir;
     }
 
-    public static void extractLoad() {
-
-        File targetFile = null;
-        String libName = getLibName();
-
-        int i = libName.lastIndexOf('.');
-        String prefix = libName.substring(0, i)+"-";
-        String suffix = libName.substring(i);
+    private static void extractLoad() {
+        List<String> libNames = getLibNames();
 
         try {
-            FileOutputStream os = null;
-            InputStream is = null;
-            try {
-                targetFile = File.createTempFile(prefix, suffix);
-                is = getResource().openStream();
-                if (is != null) {
-                    byte[] buffer = new byte[4096];
-                    os = new FileOutputStream(targetFile);
-                    int read;
-                    while ((read = is.read(buffer)) != -1) {
-                        os.write(buffer, 0, read);
-                    }
+            File temporaryDir = createTempDirectory(tempDirName);
+            temporaryDir.deleteOnExit();
+
+            for (String libName : libNames) {
+                try(InputStream is = getResource(libName).openStream()) {
+                    File targetFile = new File(temporaryDir, libName);
+                    targetFile.deleteOnExit();
+                    Files.copy(is, targetFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    System.load(targetFile.getAbsolutePath());
                 }
-                targetFile.deleteOnExit();
-            } finally {
-                close(os);
-                close(is);
             }
-            System.load(targetFile.getAbsolutePath());
-        } catch (Throwable e) {
-            IOException io;
-            if (targetFile != null) {
-                targetFile.delete();
-                io = new IOException("Unable to extract library to " + targetFile);
-            } else {
-                io = new IOException("Unable to create temporary file.");
-            }
-            io.initCause(e);
-            throw new RuntimeException(io);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
